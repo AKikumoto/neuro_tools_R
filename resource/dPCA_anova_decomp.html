@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>dPCA — ANOVA 分解の視覚的補足</title>
+<style>
+  body { font-family: 'Helvetica Neue', Arial, sans-serif; max-width: 960px;
+         margin: 40px auto; padding: 0 20px; color: #222; line-height: 1.6; }
+  h1 { border-bottom: 2px solid #444; padding-bottom: 6px; }
+  h2 { color: #333; margin-top: 2em; }
+  svg { display: block; margin: 16px auto; }
+  .caption { font-size: 0.87em; color: #555; margin-top: 4px; text-align: center; }
+  table.grid { border-collapse: collapse; margin: 12px auto; }
+  table.grid td { border: 1px solid #999; width: 52px; height: 38px;
+                  text-align: center; font-size: 13px; }
+  .header { background: #e8e8e8; font-weight: bold; }
+  .phi-s  { background: #d0e8ff; }
+  .phi-t  { background: #d8f0d8; }
+  .phi-st { background: #ffe8c0; }
+  .eq  { font-size: 1.1em; color: #444; text-align: center; margin: 10px 0; }
+  .highlight { background: #fffbcc; border-left: 4px solid #e6c300;
+               padding: 10px 14px; margin: 16px 0; }
+  .back { font-size: 0.85em; color: #666; }
+  code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 0.9em; }
+</style>
+<!-- KaTeX for inline math -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+        onload="renderMathInElement(document.body);"></script>
+</head>
+<body>
+
+<p class="back">← <a href="demixedPCA_notes.md">demixedPCA_notes.md に戻る</a></p>
+<h1>dPCA — ANOVA 分解の視覚的補足</h1>
+
+<p>このページは <a href="demixedPCA_notes.md">demixedPCA_notes.md</a> の Section 3（マージナリゼーション）の
+視覚的補足です。$K=2$（stimulus $s$, time $t$）のケースで ANOVA 分解の各ステップを図示します。</p>
+
+<!-- ====================================================================== -->
+<h2>1. データの形と中心化</h2>
+
+<p>データ $X[N, S, T]$ を固定ニューロン $n$ でスライスすると、$[S \times T]$ の行列になります。</p>
+
+<div style="display:flex; gap:60px; justify-content:center; flex-wrap:wrap; margin:20px 0;">
+
+<div>
+<p style="text-align:center; font-weight:bold; margin-bottom:6px;">元データ $X[n, s, t]$</p>
+<table class="grid">
+  <tr>
+    <td class="header"></td>
+    <td class="header">t=1</td><td class="header">t=2</td><td class="header">t=3</td>
+  </tr>
+  <tr>
+    <td class="header">s=1</td>
+    <td>1</td><td>2</td><td>3</td>
+  </tr>
+  <tr>
+    <td class="header">s=2</td>
+    <td>3</td><td>4</td><td>5</td>
+  </tr>
+</table>
+<p class="caption">全体平均 = 3.0（中心化後 −2, −1, 0, 0, 1, 2）</p>
+</div>
+
+<div style="display:flex; align-items:center;">
+<span style="font-size:2em; color:#777">→</span>
+</div>
+
+<div>
+<p style="text-align:center; font-weight:bold; margin-bottom:6px;">中心化 $\tilde{X}[n, s, t]$</p>
+<table class="grid">
+  <tr>
+    <td class="header"></td>
+    <td class="header">t=1</td><td class="header">t=2</td><td class="header">t=3</td>
+  </tr>
+  <tr>
+    <td class="header">s=1</td>
+    <td>−2</td><td>−1</td><td>0</td>
+  </tr>
+  <tr>
+    <td class="header">s=2</td>
+    <td>0</td><td>1</td><td>2</td>
+  </tr>
+</table>
+</div>
+
+</div>
+
+<!-- ====================================================================== -->
+<h2>2. 各マージナリゼーションの計算ステップ</h2>
+
+<div class="highlight">
+<p><strong>計算順序</strong>：小さいサブセット（主効果）から先に計算し、それを引き算することで
+大きいサブセット（交互作用）を求める。この順序が包除原理を実現する。</p>
+</div>
+
+<!-- stimulus marginalization -->
+<h3 style="color: #2a6faa;">$X^{(s)}$：stimulus の主効果（time 方向に平均）</h3>
+
+<div style="display:flex; gap:40px; justify-content:center; flex-wrap:wrap; margin:16px 0;">
+
+<div>
+<p class="caption">time 方向に平均 → stimulus の平均プロファイル</p>
+<table class="grid">
+  <tr>
+    <td class="header"></td>
+    <td class="header" colspan="3">mean over t</td>
+  </tr>
+  <tr><td class="header">s=1</td><td colspan="3" class="phi-s" style="width:160px;">mean(−2,−1,0) = −1</td></tr>
+  <tr><td class="header">s=2</td><td colspan="3" class="phi-s" style="width:160px;">mean(0,1,2) = +1</td></tr>
+</table>
+</div>
+
+<div style="display:flex; align-items:center; font-size:1.5em; color:#777">→</div>
+
+<div>
+<p class="caption">t に対してブロードキャスト</p>
+<table class="grid">
+  <tr>
+    <td class="header"></td>
+    <td class="header">t=1</td><td class="header">t=2</td><td class="header">t=3</td>
+  </tr>
+  <tr><td class="header">s=1</td><td class="phi-s">−1</td><td class="phi-s">−1</td><td class="phi-s">−1</td></tr>
+  <tr><td class="header">s=2</td><td class="phi-s">+1</td><td class="phi-s">+1</td><td class="phi-s">+1</td></tr>
+</table>
+</div>
+
+</div>
+<p class="caption">→ t によって変化しない（stimulus だけが違うと活動が変わる）</p>
+
+<!-- time marginalization -->
+<h3 style="color: #2a8a2a; margin-top:1.5em;">$X^{(t)}$：time の主効果（stimulus 方向に平均）</h3>
+
+<div style="display:flex; gap:40px; justify-content:center; flex-wrap:wrap; margin:16px 0;">
+
+<div>
+<p class="caption">stimulus 方向に平均</p>
+<table class="grid">
+  <tr>
+    <td class="header"></td>
+    <td class="header">t=1</td><td class="header">t=2</td><td class="header">t=3</td>
+  </tr>
+  <tr><td class="header">mean<br>over s</td>
+    <td class="phi-t">−1</td><td class="phi-t">0</td><td class="phi-t">+1</td>
+  </tr>
+</table>
+</div>
+
+<div style="display:flex; align-items:center; font-size:1.5em; color:#777">→</div>
+
+<div>
+<p class="caption">s に対してブロードキャスト</p>
+<table class="grid">
+  <tr>
+    <td class="header"></td>
+    <td class="header">t=1</td><td class="header">t=2</td><td class="header">t=3</td>
+  </tr>
+  <tr><td class="header">s=1</td><td class="phi-t">−1</td><td class="phi-t">0</td><td class="phi-t">+1</td></tr>
+  <tr><td class="header">s=2</td><td class="phi-t">−1</td><td class="phi-t">0</td><td class="phi-t">+1</td></tr>
+</table>
+</div>
+
+</div>
+<p class="caption">→ s によって変化しない（time だけが違うと活動が変わる）</p>
+
+<!-- interaction -->
+<h3 style="color: #c07820; margin-top:1.5em;">$X^{(st)}$：交互作用（残差）</h3>
+
+<p class="eq">$X^{(st)} = \tilde{X} - X^{(s)} - X^{(t)}$</p>
+
+<div style="display:flex; gap:20px; justify-content:center; flex-wrap:wrap; align-items:center; margin:16px 0;">
+
+<div>
+<p class="caption">$\tilde{X}$</p>
+<table class="grid">
+  <tr>
+    <td class="header"></td>
+    <td class="header">t=1</td><td class="header">t=2</td><td class="header">t=3</td>
+  </tr>
+  <tr><td class="header">s=1</td><td>−2</td><td>−1</td><td>0</td></tr>
+  <tr><td class="header">s=2</td><td>0</td><td>+1</td><td>+2</td></tr>
+</table>
+</div>
+
+<div style="font-size:1.5em; color:#777">−</div>
+
+<div>
+<p class="caption">$X^{(s)}$</p>
+<table class="grid">
+  <tr>
+    <td class="header"></td>
+    <td class="header">t=1</td><td class="header">t=2</td><td class="header">t=3</td>
+  </tr>
+  <tr><td class="header">s=1</td><td class="phi-s">−1</td><td class="phi-s">−1</td><td class="phi-s">−1</td></tr>
+  <tr><td class="header">s=2</td><td class="phi-s">+1</td><td class="phi-s">+1</td><td class="phi-s">+1</td></tr>
+</table>
+</div>
+
+<div style="font-size:1.5em; color:#777">−</div>
+
+<div>
+<p class="caption">$X^{(t)}$</p>
+<table class="grid">
+  <tr>
+    <td class="header"></td>
+    <td class="header">t=1</td><td class="header">t=2</td><td class="header">t=3</td>
+  </tr>
+  <tr><td class="header">s=1</td><td class="phi-t">−1</td><td class="phi-t">0</td><td class="phi-t">+1</td></tr>
+  <tr><td class="header">s=2</td><td class="phi-t">−1</td><td class="phi-t">0</td><td class="phi-t">+1</td></tr>
+</table>
+</div>
+
+<div style="font-size:1.5em; color:#777">=</div>
+
+<div>
+<p class="caption">$X^{(st)}$</p>
+<table class="grid">
+  <tr>
+    <td class="header"></td>
+    <td class="header">t=1</td><td class="header">t=2</td><td class="header">t=3</td>
+  </tr>
+  <tr><td class="header">s=1</td><td class="phi-st">0</td><td class="phi-st">0</td><td class="phi-st">0</td></tr>
+  <tr><td class="header">s=2</td><td class="phi-st">0</td><td class="phi-st">0</td><td class="phi-st">0</td></tr>
+</table>
+</div>
+
+</div>
+
+<p class="caption">このデータは $s$ と $t$ の加法的な構造（交互作用ゼロ）を持つため $X^{(st)} = 0$。</p>
+
+<!-- ====================================================================== -->
+<h2>3. 直交性の確認（Frobenius 内積）</h2>
+
+<p>$\langle X^{(s)}, X^{(t)} \rangle_F = \sum_{n,s,t} X^{(s)}_{n,s,t} \cdot X^{(t)}_{n,s,t}$</p>
+
+<div style="text-align:center; margin: 16px 0;">
+<table style="margin: 0 auto; border-collapse:collapse; font-size:0.9em;">
+  <tr>
+    <td style="padding:6px 12px;">$(-1)(-1) + (-1)(0) + (-1)(+1)$</td>
+    <td style="padding:6px 4px; font-weight:bold;">s=1 の寄与 =</td>
+    <td style="padding:6px 12px;">$+1 + 0 + (-1) = 0$</td>
+  </tr>
+  <tr>
+    <td style="padding:6px 12px;">$(+1)(-1) + (+1)(0) + (+1)(+1)$</td>
+    <td style="padding:6px 4px; font-weight:bold;">s=2 の寄与 =</td>
+    <td style="padding:6px 12px;">$-1 + 0 + 1 = 0$</td>
+  </tr>
+  <tr style="border-top: 2px solid #aaa;">
+    <td></td>
+    <td style="padding:6px 4px; font-weight:bold; color: #2a6faa;">合計 =</td>
+    <td style="padding:6px 12px; font-weight:bold; color: #2a6faa;">$0$ ✓</td>
+  </tr>
+</table>
+</div>
+
+<p>$X^{(s)}$ は「s=1 と s=2 で符号反転、t によらず定数」という構造を持つ。
+$X^{(t)}$ は「t=1,2,3 で −1, 0, +1 の線形傾き、s によらず同じ」という構造を持つ。
+これらを掛けて全要素を足すと、s 方向の正負が打ち消し合ってゼロになる。</p>
+
+<!-- ====================================================================== -->
+<h2>4. 成分の分割（ニューロン n の可視化）</h2>
+
+<svg width="500" height="240" viewBox="0 0 500 240">
+  <!-- background -->
+  <rect x="0" y="0" width="500" height="240" fill="#fafafa" rx="6"/>
+
+  <!-- time axis -->
+  <line x1="60" y1="200" x2="460" y2="200" stroke="#888" stroke-width="1.5"/>
+
+  <!-- stim s=1 trajectory (original) -->
+  <!-- s=1: −2, −1, 0 -->
+  <polyline points="100,170 220,150 340,130"
+            fill="none" stroke="#888" stroke-width="2" stroke-dasharray="6,3"/>
+  <circle cx="100" cy="170" r="4" fill="#888"/>
+  <circle cx="220" cy="150" r="4" fill="#888"/>
+  <circle cx="340" cy="130" r="4" fill="#888"/>
+
+  <!-- stim s=2 trajectory (original) -->
+  <!-- s=2: 0, +1, +2 -->
+  <polyline points="100,130 220,110 340,90"
+            fill="none" stroke="#888" stroke-width="2" stroke-dasharray="6,3"/>
+  <circle cx="100" cy="130" r="4" fill="#888"/>
+  <circle cx="220" cy="110" r="4" fill="#888"/>
+  <circle cx="340" cy="90" r="4" fill="#888"/>
+  <text x="345" y="130" font-size="11" fill="#888">$\tilde{X}$ (both stims)</text>
+
+  <!-- X_s component: horizontal lines at mean of each stim -->
+  <!-- s=1: mean = −1 → y = 150; s=2: mean = +1 → y = 110 -->
+  <line x1="90" y1="150" x2="360" y2="150" stroke="#2a6faa" stroke-width="3"/>
+  <line x1="90" y1="110" x2="360" y2="110" stroke="#2a6faa" stroke-width="3"/>
+  <text x="365" y="153" font-size="11" fill="#2a6faa">$X^{(s)}$ s=1</text>
+  <text x="365" y="113" font-size="11" fill="#2a6faa">$X^{(s)}$ s=2</text>
+
+  <!-- X_t component: mean ramp (both stims same) -->
+  <!-- t=1:−1, t=2:0, t=3:+1 → centered at y=130 -->
+  <polyline points="100,150 220,130 340,110"
+            fill="none" stroke="#2a8a2a" stroke-width="3"/>
+  <circle cx="100" cy="150" r="4" fill="#2a8a2a"/>
+  <circle cx="220" cy="130" r="4" fill="#2a8a2a"/>
+  <circle cx="340" cy="110" r="4" fill="#2a8a2a"/>
+  <text x="345" y="107" font-size="11" fill="#2a8a2a">$X^{(t)}$ (ramp)</text>
+
+  <!-- axis labels -->
+  <text x="90" y="218" font-size="11" fill="#666">t=1</text>
+  <text x="210" y="218" font-size="11" fill="#666">t=2</text>
+  <text x="330" y="218" font-size="11" fill="#666">t=3</text>
+
+  <!-- legend -->
+  <line x1="30" y1="30" x2="55" y2="30" stroke="#888" stroke-width="2" stroke-dasharray="5,3"/>
+  <text x="60" y="34" font-size="11" fill="#888">データ $\tilde{X}$</text>
+  <line x1="30" y1="50" x2="55" y2="50" stroke="#2a6faa" stroke-width="3"/>
+  <text x="60" y="54" font-size="11" fill="#2a6faa">$X^{(s)}$（stimulus 効果）</text>
+  <line x1="30" y1="70" x2="55" y2="70" stroke="#2a8a2a" stroke-width="3"/>
+  <text x="60" y="74" font-size="11" fill="#2a8a2a">$X^{(t)}$（time 効果）</text>
+</svg>
+
+<p class="caption">ニューロン $n$ の 2 条件の軌跡（破線）は、stimulus 効果（水平シフト）と
+time 効果（傾き）の重ね合わせ。dPCA はこれを分離する。</p>
+
+<!-- ====================================================================== -->
+<h2>5. SVD による Decoder の意味</h2>
+
+<p>各マージナリゼーション $X^{(\phi)}$ を $[N \times K]$ に unfold して SVD をかける：</p>
+
+<svg width="500" height="120" viewBox="0 0 500 120">
+  <!-- boxes -->
+  <!-- X_phi -->
+  <rect x="10" y="30" width="60" height="60" fill="#d0e8ff" stroke="#2a6faa" stroke-width="1.5" rx="4"/>
+  <text x="40" y="55" font-size="12" text-anchor="middle" fill="#2a6faa">$X^{(\phi)}$</text>
+  <text x="40" y="72" font-size="10" text-anchor="middle" fill="#555">N × K</text>
+
+  <!-- = -->
+  <text x="82" y="65" font-size="18" fill="#777">=</text>
+
+  <!-- U -->
+  <rect x="98" y="20" width="40" height="80" fill="#ffe0c0" stroke="#c07820" stroke-width="1.5" rx="4"/>
+  <text x="118" y="57" font-size="13" text-anchor="middle" fill="#c07820">U</text>
+  <text x="118" y="72" font-size="10" text-anchor="middle" fill="#555">N×k</text>
+
+  <!-- Sigma -->
+  <rect x="148" y="40" width="40" height="40" fill="#f0ffe0" stroke="#607010" stroke-width="1.5" rx="4"/>
+  <text x="168" y="62" font-size="13" text-anchor="middle" fill="#607010">Σ</text>
+  <text x="168" y="75" font-size="10" text-anchor="middle" fill="#555">k×k</text>
+
+  <!-- V^T -->
+  <rect x="198" y="50" width="80" height="30" fill="#f0e8ff" stroke="#6020a0" stroke-width="1.5" rx="4"/>
+  <text x="238" y="67" font-size="13" text-anchor="middle" fill="#6020a0">$V^\top$</text>
+  <text x="238" y="80" font-size="10" text-anchor="middle" fill="#555">k × K</text>
+
+  <!-- arrow + label -->
+  <line x1="310" y1="60" x2="360" y2="60" stroke="#555" stroke-width="1.5" marker-end="url(#a6)"/>
+  <text x="330" y="50" font-size="11" fill="#555" text-anchor="middle">top k</text>
+  <defs>
+    <marker id="a6" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#555"/>
+    </marker>
+  </defs>
+
+  <!-- F_phi = U -->
+  <rect x="368" y="20" width="40" height="80" fill="#ffe0c0" stroke="#c07820" stroke-width="1.5" rx="4"/>
+  <text x="388" y="50" font-size="11" text-anchor="middle" fill="#c07820">$F_\phi$</text>
+  <text x="388" y="65" font-size="10" text-anchor="middle" fill="#c07820">$= U$</text>
+  <text x="388" y="80" font-size="10" text-anchor="middle" fill="#555">N×k</text>
+
+  <!-- D_phi = C^T U -->
+  <rect x="415" y="20" width="75" height="80" fill="#d0e8ff" stroke="#2a6faa" stroke-width="1.5" rx="4"/>
+  <text x="452" y="50" font-size="11" text-anchor="middle" fill="#2a6faa">$D_\phi$</text>
+  <text x="452" y="65" font-size="10" text-anchor="middle" fill="#2a6faa">$= C_\phi^\top U$</text>
+  <text x="452" y="80" font-size="10" text-anchor="middle" fill="#555">N×k</text>
+</svg>
+
+<table>
+  <tr><th></th><th>記号</th><th>意味</th></tr>
+  <tr>
+    <td>Encoder $F_\phi$</td><td>$U$（左特異ベクトル）</td>
+    <td>$X^{(\phi)}$ の分散を最大化するニューラル空間の方向</td>
+  </tr>
+  <tr>
+    <td>Decoder $D_\phi$</td><td>$C_\phi^\top U$</td>
+    <td>$\tilde{X}$ を射影する方向（factor $\phi$ の潜在表現を取り出す）</td>
+  </tr>
+</table>
+
+</body>
+</html>

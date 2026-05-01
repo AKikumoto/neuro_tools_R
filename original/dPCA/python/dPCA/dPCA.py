@@ -737,7 +737,7 @@ class dPCA(BaseEstimator):
         #trialX = np.rollaxis(trialX,0,len(original_shape))
 
         # inverse rolled axis in trialX
-        if protected:
+        if not(protected):
             trialX = self._roll_back(trialX,axes,invert=True)
 
         return trialX

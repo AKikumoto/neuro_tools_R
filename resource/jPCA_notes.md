@@ -1,524 +1,238 @@
-# jPCA ノート
-### 数学的基盤の詳細説明
+# jPCA 数学ノート
 
-> このノートはjPCAの数学的理解のためのものです。実装・コードは含みません。
-> 疑問が生じた箇所には **[Q]** を付け、理解が確認できた箇所には **[✓]** を付けて更新してください。
+**Reference**: Churchland, M.M. et al. (2012). Neural population dynamics during reaching. *Nature* 487, 51–56.  
+**R 実装**: `jPCA_lib.R`（このプロジェクト）  
+**視覚的補足**: [jPCA_geometry.html](jPCA_geometry.html)
+
+> このノートは jPCA の数学的理解のためのものです。実装コードは含みません。
+> dPCA と組み合わせて使う位置づけについては [demixedPCA_notes.md](demixedPCA_notes.md) を参照してください。
 
 ---
 
-## 1. 出発点：何を問うているか
+## 1. 問いの立て方
 
-EEGデコーディングは「時刻tにruleが解読できるか」を問う。
-jPCAはそれとは別の問いを立てる：
+EEG デコーディングは「時刻 $t$ に rule が解読できるか」を問う。  
+jPCA はそれとは別の問いを立てる：
 
-```
-時刻t の population state x(t) から
-時刻t+1 の state x(t+1) はどう予測できるか？
+> **Population state の変化の仕方**（dynamics）は回転的か？
 
-→ 表現の"中身"ではなく、表現の"変化の仕方"に着目する
-```
+Population state とは、$N$ チャンネルの活動を時刻 $t$ でまとめた $N$ 次元ベクトル：
 
-**population state** とは：N個のニューロン（またはEEGチャンネル）の活動を、
-あるtimepointにおいてN次元ベクトルとしてまとめたもの。
+$$\mathbf{x}(t) \in \mathbb{R}^N$$
 
-```
-x(t) ∈ ℝᴺ
-
-例（N=3のとき）:
-  t=1: x = [0.2, 0.8, 0.1]  ← ニューロン1,2,3の発火率
-  t=2: x = [0.3, 0.6, 0.2]
-  t=3: x = [0.5, 0.3, 0.4]
-  ...
-  → 時間とともにN次元空間を動く「点の軌跡」
-```
+時間とともに $N$ 次元空間内を動く「点の軌跡」= **trajectory** を観察する。
 
 ---
 
 ## 2. 線形ダイナミクスの仮定
 
-最もシンプルな仮定：**状態の変化が現在の状態に線形比例する**。
+最もシンプルな仮定：**状態の変化（velocity）が現在の状態に線形比例する**。
 
-```
-ẋ(t) ≈ M x(t)
+$$\dot{\mathbf{x}}(t) = M \mathbf{x}(t)$$
 
-ẋ = dx/dt（状態の時間微分 = 「次の瞬間どこへ動くか」）
-x = N次元の population state
-M = [N×N の変換行列]（これを推定したい）
-```
+- $\dot{\mathbf{x}} = d\mathbf{x}/dt$（有限差分 $\mathbf{x}(t+1) - \mathbf{x}(t)$ で近似）  
+- $M \in \mathbb{R}^{N \times N}$：推定したいダイナミクス行列
 
-ẋ を有限差分で近似すると：
-
-```
-ẋ(t) ≈ x(t+1) − x(t)  （隣り合うtimepointの差分）
-```
-
-M を無制約で推定すること自体は簡単（最小二乗法）。
-問題は、**無制約のMは回転・拡大・歪みすべてを含む**ので、
-「dynamicsが回転的かどうか」という問いに答えられない。
+無制約の $M$ は回転・拡大・歪みを全部含む。「dynamics が回転的か」という問いに答えるには、$M$ を **skew-symmetric（歪対称）** に制約する。
 
 ---
 
-## 3. Skew-symmetric行列とは
+## 3. Skew-symmetric 行列と回転
 
 ### 定義
 
-```
-M_skew = −M_skewᵀ   （転置したら符号が逆になる）
-```
+$$M_\text{skew} = -M_\text{skew}^\top$$
 
-### 具体例（3×3）
+具体例（$2 \times 2$）：
 
-```
-M_skew = [  0   -3    2 ]
-         [  3    0   -5 ]
-         [ -2    5    0 ]
+$$M_\text{skew} = \begin{pmatrix} 0 & -\omega \\ \omega & 0 \end{pmatrix}$$
 
-確認：M_skewᵀ = [  0    3   -2 ]  = −M_skew  ✓
-                [ -3    0    5 ]
-                [  2   -5    0 ]
-```
+$m_{ii} = 0$（対角はゼロ）、$m_{ij} = -m_{ji}$（上下三角が符号反転）。  
+自由度は $N(N-1)/2$ — $N=2$ のとき 1 個（角速度 $\omega$ だけ）。
 
-### 2つの性質
+### なぜ「回転」を意味するか
 
-**性質1：対角はすべてゼロ**
+$\dot{\mathbf{x}} = M_\text{skew}\,\mathbf{x}$ の解は：
 
-```
-定義より m_ii = −m_ii
-→ 2m_ii = 0 → m_ii = 0
-```
+$$\mathbf{x}(t) = e^{M_\text{skew}\,t}\,\mathbf{x}(0)$$
 
-**性質2：上三角と下三角は符号が逆**
+$M_\text{skew}$ が skew-symmetric のとき：
 
-```
-m_ij = −m_ji （すべての i≠j について）
+$$\bigl(e^{M_\text{skew}}\bigr)^\top = e^{M_\text{skew}^\top} = e^{-M_\text{skew}} = \bigl(e^{M_\text{skew}}\bigr)^{-1}$$
 
-つまり「i行j列」を決めれば「j行i列」は自動的に決まる
-→ 自由度は N(N−1)/2 個だけ（3×3なら3個）
-```
+→ $e^{M_\text{skew}}$ は**直交行列**（$O^\top = O^{-1}$）= 回転行列（または鏡映）。
 
----
+結論：$\|\mathbf{x}(t)\| = \|\mathbf{x}(0)\|$（大きさ不変）、方向だけが変化 = **等速円運動**。
 
-## 4. なぜ skew-symmetric が「回転」を意味するか
+### 固有値が純虚数になる証明
 
-### 微分方程式の解
+$M_\text{skew}\,\mathbf{v} = \lambda \mathbf{v}$ に左から $\bar{\mathbf{v}}^\top$ をかける：
 
-```
-ẋ = M_skew x  を解くと：
+$$\bar{\mathbf{v}}^\top M_\text{skew}\,\mathbf{v} = \lambda\,|\mathbf{v}|^2$$
 
-x(t) = e^{M_skew · t} x(0)
+この式の複素共役を取ると：
 
-e^M はMatrix Exponential（行列の指数関数）
-```
+$$\overline{\bar{\mathbf{v}}^\top M_\text{skew}\,\mathbf{v}} = \mathbf{v}^\top M_\text{skew}^\top \bar{\mathbf{v}} = -\mathbf{v}^\top M_\text{skew}\,\bar{\mathbf{v}} = -\overline{\bar{\mathbf{v}}^\top M_\text{skew}\,\mathbf{v}}$$
 
-### Matrix Exponentialが直交行列になる
+→ $\bar{\mathbf{v}}^\top M_\text{skew}\,\mathbf{v}$ は純虚数（または 0）  
+→ $\lambda\,|\mathbf{v}|^2$ が純虚数 → $\lambda = \pm i\omega$（$\omega \in \mathbb{R}$）。
 
-M_skewがskew-symmetricのとき：
+固有値 $\lambda = i\omega$ のとき、解は Euler の公式より：
 
-```
-(e^{M_skew})ᵀ = e^{M_skewᵀ} = e^{−M_skew} = (e^{M_skew})⁻¹
+$$e^{i\omega t} = \cos(\omega t) + i\sin(\omega t)$$
 
-→ e^{M_skew} は直交行列（Oᵀ = O⁻¹）
-```
-
-直交行列 = 回転行列（または鏡映）。
-つまり `x(t) = e^{M_skew · t} x(0)` は：
-
-```
-x(0) が時間とともに回転する
-  → 大きさ |x(t)| = |x(0)|（不変）
-  → 方向だけが変化
-```
-
-### 固有値が純虚数になる理由
-
-skew-symmetric行列の固有値は必ず純虚数 ±iω になる。
-
-```
-証明の概略：
-  M_skew v = λv  とする
-  両辺に v̄ᵀ（複素共役転置）を左からかけると：
-    v̄ᵀ M_skew v = λ |v|²
-
-  一方、v̄ᵀ M_skew v の複素共役は：
-    (v̄ᵀ M_skew v)* = vᵀ M_skewᵀ v̄ = −vᵀ M_skew v̄ = −(v̄ᵀ M_skew v)*
-
-  → v̄ᵀ M_skew v は純虚数（または0）
-  → λ |v|² が純虚数 → λ = ±iω （ω ∈ ℝ）
-```
-
-固有値 λ = iω のとき、解は：
-
-```
-x(t) = e^{iωt} x(0)
-
-e^{iωt} = cos(ωt) + i sin(ωt)  （Eulerの公式）
-
-→ 角周波数 ω でN次元空間内を回転する
-→ ω が大きい = 速い回転
-```
+→ 角周波数 $\omega$ でスピンする。
 
 ---
 
-## 5. 内積・外積と sin/cos の関係
+## 4. 角度 $\theta$ による回転強度の定量化
 
-### なぜ内積が cosθ に比例するか
+jPCA 平面に射影した後、各 (条件 $c$, 時刻 $t$) について：
 
-2つのベクトル a, b があるとき：
+$$\theta(t,c) = \operatorname{atan2}\!\bigl(\mathbf{x} \wedge \dot{\mathbf{x}},\; \mathbf{x} \cdot \dot{\mathbf{x}}\bigr)$$
 
-```
-a = |a| [cosα, sinα]   （角度αの方向を向く単位ベクトルを|a|倍）
-b = |b| [cosβ, sinβ]   （角度βの方向を向く単位ベクトルを|b|倍）
+ここで $\mathbf{x} \cdot \dot{\mathbf{x}}$ は内積、$\mathbf{x} \wedge \dot{\mathbf{x}} = x_1 \dot{x}_2 - x_2 \dot{x}_1$ は 2D 外積の $z$ 成分。
 
-a · b = a₁b₁ + a₂b₂
-      = |a||b| cosα cosβ + |a||b| sinα sinβ
-      = |a||b| (cosα cosβ + sinα sinβ)
-      = |a||b| cos(β − α)          ← 加法定理
-      = |a||b| cosθ                 （θ = β − α = 2つのなす角）
-```
+#### 内積と $\cos\theta$ の関係
 
-つまり内積の定義 `a₁b₁ + a₂b₂` を展開すると、
-自動的に cos(なす角) が出てくる。
+$$\mathbf{a} \cdot \mathbf{b} = |\mathbf{a}||\mathbf{b}|\cos\theta$$
 
-**直観：** b を a の方向へ射影した長さ × |a|
+（2 ベクトルの成分展開から加法定理を通じて自然に出てくる。）  
+直観：$\mathbf{b}$ を $\mathbf{a}$ 方向に射影した長さ $\times |\mathbf{a}|$。
 
-```
-b の a への射影 = |b| cosθ
-→ a · b = |a| × (|b| cosθ) = |a||b| cosθ
+#### 外積 $z$ 成分と $\sin\theta$ の関係
 
-θ = 0°  → cosθ = 1  → 完全に同じ方向 → 最大
-θ = 90° → cosθ = 0  → 垂直          → 0
-θ = 180°→ cosθ = −1 → 完全に逆方向  → 最小（負）
-```
+$$a_1 b_2 - a_2 b_1 = |\mathbf{a}||\mathbf{b}|\sin\theta$$
 
-### なぜ外積z成分が sinθ に比例するか
+直観：2 ベクトルが作る平行四辺形の**符号付き面積**。
 
-同じく a, b を角度で書いて外積z成分を計算すると：
+#### atan2
 
-```
-a ∧ b = a₁b₂ − a₂b₁
-      = |a||b| cosα sinβ − |a||b| sinα cosβ
-      = |a||b| (cosα sinβ − sinα cosβ)
-      = |a||b| sin(β − α)          ← 加法定理
-      = |a||b| sinθ                 （θ = β − α）
-```
+$$\theta = \operatorname{atan2}(y,\,x)$$
 
-つまり外積z成分の定義 `a₁b₂ − a₂b₁` を展開すると、
-自動的に sin(なす角) が出てくる。
+- 第 1 引数 $y = \sin\theta$、第 2 引数 $x = \cos\theta$
+- 返り値 $\in (-\pi, \pi]$ — 4 象限を一意に区別できる
+- 通常の $\arctan(y/x)$ は商が同じなら同一象限として扱うため不十分
 
-**直観：** a と b が作る平行四辺形の面積（符号付き）
+$|\mathbf{a}||\mathbf{b}|$ は分子・分母両方にかかるのでキャンセルされ：
 
-```
-平行四辺形の面積 = 底辺 × 高さ = |a| × |b| sinθ = |a||b| sinθ
+$$\theta = \operatorname{atan2}(\mathbf{x} \wedge \dot{\mathbf{x}},\; \mathbf{x} \cdot \dot{\mathbf{x}})$$
 
-θ = 0°  → sinθ = 0  → 同じ方向（面積ゼロ）
-θ = 90° → sinθ = 1  → 垂直（面積最大）
-θ = 180°→ sinθ = 0  → 逆方向（面積ゼロ）
-符号     → 反時計回りに測ったθが正なら正
-```
+#### $\theta$ の 4 ケース（視覚的補足 → [jPCA_geometry.html](jPCA_geometry.html)）
 
-### 3Dの外積とは
+| $\theta$ | 幾何的意味 |
+|---|---|
+| $\approx +\pi/2$ | 純粋な反時計回り回転（$\dot{\mathbf{x}} \perp \mathbf{x}$） |
+| $\approx 0$ | 純粋な拡大（$\dot{\mathbf{x}} \parallel \mathbf{x}$） |
+| $\approx -\pi/2$ | 純粋な時計回り回転 |
+| $\approx \pm\pi$ | 純粋な収縮（原点に向かう） |
 
-2Dでは a ∧ b はスカラー（1つの数）だった。
-3Dでは外積 a × b はベクトルになる：
-
-```
-a = [a₁, a₂, a₃]
-b = [b₁, b₂, b₃]
-
-a × b = [ a₂b₃ − a₃b₂,   ← x成分
-          a₃b₁ − a₁b₃,   ← y成分
-          a₁b₂ − a₂b₁ ]  ← z成分
-
-大きさ：|a × b| = |a||b|sinθ
-方向：  a と b の両方に垂直（右手則）
-```
-
-2Dのベクトルは「z成分が0の3Dベクトル」と見なせる：
-
-```
-a = [a₁, a₂, 0]
-b = [b₁, b₂, 0]
-
-a × b = [  0    ←  a₂・0 − 0・b₂ = 0
-            0    ←  0・b₁ − a₁・0 = 0
-          a₁b₂ − a₂b₁ ]  ← z成分だけ残る
-
-→ 2Dの外積 a ∧ b = 3Dの外積のz成分
-```
-
-z成分の符号は「平面内の回転方向」を表す。
-右手則：右手で a から b の向きに指を曲げると親指がz正方向を向く。
+$\theta$ 分布のピークが $\pi/2$ に集中 → rotational dynamics あり。
 
 ---
 
-## 6. atan2 とは
+## 5. $R^2$ 比による回転強度の定量化
 
-### 通常の atan の問題
+$\theta$ とは独立した別の指標：
 
-```
-θ = atan(sinθ / cosθ)
+$$R^2_\text{ratio} = \frac{R^2_\text{skew}}{R^2_\text{unrestr}}$$
 
-問題：(sinθ, cosθ) = (0.7, 0.7) と (−0.7, −0.7) は比が同じ → 同じ角度を返す
-  実際は前者が 45°、後者が −135°（または225°）で全然違う
-```
+- $R^2_\text{unrestr}$：無制約の $\hat{M}$ が $\dot{X}$ を説明できる割合（上限）
+- $R^2_\text{skew}$：$M_\text{skew}$ が $\dot{X}$ を説明できる割合
 
-### atan2 の仕組み
+$$R^2 = 1 - \frac{\|dX - M X_\text{prev}\|_F^2}{\|dX\|_F^2}$$
 
-```
-θ = atan2(sinθ, cosθ)
+解釈の目安：
 
-sinθ と cosθ を別々に受け取り、どの象限にいるかを判断する
+| $R^2_\text{ratio}$ | 意味 |
+|---|---|
+| $\approx 1.0$ | dynamics がほぼ純粋な回転 |
+| $\approx 0.5$ | ランダムデータの期待値 |
+| $\ll 0.5$ | 起こり得ない（$M_\text{skew}$ は $\hat{M}$ の成分の一つだから） |
 
-第1引数（y）：sinθ  → 正か負か
-第2引数（x）：cosθ  → 正か負か
+ランダムデータで期待値が $0.5$ である理由：任意の行列 $\hat{M}$ は対称成分 $S$ と歪対称成分 $A$ に直交分解できる（Frobenius 内積がゼロ）。
 
-(y>0, x>0) → 第1象限 → θ ∈ (0, π/2)
-(y>0, x<0) → 第2象限 → θ ∈ (π/2, π)
-(y<0, x<0) → 第3象限 → θ ∈ (−π, −π/2)
-(y<0, x>0) → 第4象限 → θ ∈ (−π/2, 0)
+$$\hat{M} = \underbrace{\frac{\hat{M} + \hat{M}^\top}{2}}_{S} + \underbrace{\frac{\hat{M} - \hat{M}^\top}{2}}_{A = M_\text{skew}}$$
 
-返り値：(−π, π]  ← 4象限すべてを一意に区別できる
-```
+ランダムデータでは $S$ と $A$ の説明力が平均的に等しくなるため、$R^2_\text{ratio} \approx 0.5$。
 
-### jPCAでの使用
-
-内積が cosθ に比例、外積z が sinθ に比例しているので：
-
-```
-cosθ = (a · b) / (|a||b|)
-sinθ = (a ∧ b) / (|a||b|)
-
-θ = atan2(sinθ, cosθ)
-  = atan2( a∧b / |a||b|,  a·b / |a||b| )
-  = atan2( a∧b,  a·b )       ← |a||b| は両方にかかるのでキャンセル
-
-→ θ = atan2(x ∧ ẋ,  x · ẋ)
-```
+**注意**：normalize=FALSE（PC 間の分散スケールを揃えない）にすると $R^2_\text{ratio}$ が負になることがある。これは PCA の各 PC の分散が大きく異なるとき、M_skew の推定が歪むため。`jPCA_lib.R` では `normalize=TRUE` がデフォルト。
 
 ---
 
-## 7. θ（角度）による rotation strength の定量化
-
-### 定義
-
-jPCA平面に射影した後、各 (条件c, 時刻t) について：
+## 6. アルゴリズムのまとめ
 
 ```
-x(t,c) = jPCA平面上の現在地（位置ベクトル）
-ẋ(t,c) = 速度ベクトル（次の瞬間どこへ動くか）
+Input: X_list — 条件ごとの [N × T] 行列のリスト（条件数 ≥ 3）
 
-θ(t,c) = atan2( x ∧ ẋ,  x · ẋ )
-```
-
-### θの4つのケース
-
-```
-θ ≈ +π/2（+90°）→ pure rotation（反時計回り）
-  ẋ が x に垂直 = 円軌道の接線方向
-  速度は常に進行方向を向き、大きさは変わらない
-
-θ ≈ 0°           → pure expansion
-  ẋ が x と同方向 = 原点から放射状に広がる
-  速度は位置ベクトルと平行
-
-θ ≈ −π/2（−90°）→ pure rotation（時計回り）
-
-θ ≈ ±π（180°）   → pure contraction（原点に向かって縮む）
-
-0 < θ < π/2      → spiral outward（回転しながら広がる）
-π/2 < θ < π      → spiral inward（回転しながら収束する）
-```
-
-### θ分布の読み方
-
-jPCAはすべての (条件c, 時刻t) の組み合わせについてθを計算し、
-その**分布のピーク**を見る。
-
-```
-ピーク ≈ π/2  → rotational dynamics あり（jPCAが有効なデータ）
-ピーク ≈ 0°   → expansion/contractionが支配的
-フラットな分布 → 構造なし（ランダムノイズ）
-```
-
-Churchland 2012 Fig.6a：
-- 実データとgenerator modelのθ分布がともにπ/2にピーク
-  → rotational dynamicsの証拠
-- velocity-tuned modelやEMGのθ分布はピークが0付近
-  → expansionのみ、rotationなし
-
----
-
-## 8. R²比による rotation strength の定量化
-
-θとは独立した別の指標。
-
-```
-R²_skew   = M_skew で dX をどれだけ説明できるか
-R²_unrestr= 制約なしMでどれだけdXを説明できるか（上限）
-
-R²_ratio = R²_skew / R²_unrestr
-
-  1.0 に近い → dynamicsがほぼ純粋な回転で説明できる
-              （skew-symmetric制約を課してもほとんど損しない）
-  0.5 前後  → ランダムデータの期待値
-              （なぜ0.5か：ランダムデータではM_hatの
-               対称成分と歪対称成分が同程度の説明力を持つため）
-  0.5 を大きく下回ることはない（M_skewはM_hatの部分集合）
-```
-
----
-
-## 9. アルゴリズムのまとめ
-
-```
-Input: X_list — 条件ごとの [N × T] 行列のリスト
-       N = features（チャンネル数など）
-       T = timepoints
-       条件数 ≥ 3 が必要（binary conditionでは回転平面が1次元になり無意味）
-
-─────────────────────────────────────────────────────────
-
-Step 1: PCA前処理
-
+Step 1: PCA 前処理
   (a) 全条件を結合: X_full [N × C*T]
-
   (b) cross-condition mean を引く
-      各timepointについて、全条件の平均を引く
-      [なぜ必要か]
-        全条件に共通するevoked responseがあると、
-        jPCAはそのドリフト（時間的なずれ）を
-        「回転」として誤検出してしまう
-        → 条件間の差分だけを残すことで純粋な構造を見る
+      各 timepoint で全条件の平均を引く（共通 evoked response を除去）
+  (c) PCA → top n_pcs PC を保持（典型: n_pcs = 6）
+      → X_red [n_pcs × C*T]
+  (d) 各 PC を PC 固有値の平方根（= 標準偏差）で割って正規化
+      （PC 間のスケール差を除き、M_skew の推定を安定化）
 
-  (c) PCA → top n_pcs PCs を保持（典型的に n_pcs = 6）
-      [なぜPCAが必要か]
-        N次元全体でM_skewを推定すると過学習する
-        → 分散の大きい成分だけに絞ることで
-          ノイズに乗ったrotationを拾わない
+Step 2: 有限差分
+  dX     = X[t+1] − X[t]   [n_pcs × C*(T-1)]
+  X_prev = X[1:(T-1)]      [n_pcs × C*(T-1)]
 
-  → X_red [n_pcs × C*T]
-
-─────────────────────────────────────────────────────────
-
-Step 2: 有限差分で ẋ を近似
-
-  dX    = X[t+1] − X[t]  （各条件の隣り合うtimepointの差分）
-  X_prev= X[1:(T-1)]      （各条件の最後のtimepointは除外）
-
-  条件をまたいで結合：
-    dX    [n_pcs × C*(T-1)]
-    X_prev[n_pcs × C*(T-1)]
-
-─────────────────────────────────────────────────────────
-
-Step 3: 無制約Mを最小二乗推定
-
+Step 3: 無制約 M を最小二乗推定
   dX ≈ M X_prev
+  M_hat = dX X_prev^T (X_prev X_prev^T)^{-1}
 
-  M_hat = dX X_prevᵀ (X_prev X_prevᵀ)⁻¹
+Step 4: Skew-symmetric に射影
+  M_skew = (M_hat − M_hat^T) / 2
+  （任意の行列の歪対称成分 = Frobenius ノルム最小の skew-symmetric 近似）
 
-  [導出]
-    dX = M X_prev
-    dX X_prevᵀ = M X_prev X_prevᵀ
-    M = dX X_prevᵀ (X_prev X_prevᵀ)⁻¹  ← 両辺に右から逆行列をかける
-
-─────────────────────────────────────────────────────────
-
-Step 4: Skew-symmetricに射影
-
-  M_skew = (M_hat − M_hatᵀ) / 2
-
-  [なぜこれが最も近いskew-symmetric行列か]
-    任意の行列MはS（対称）+ A（歪対称）に一意分解できる：
-      M = (M + Mᵀ)/2  +  (M − Mᵀ)/2
-              S                A
-    SとAはFrobenius内積がゼロ（直交）
-    → AはMの歪対称成分のみを含む = Mに最も近いskew-symmetric行列
-
-─────────────────────────────────────────────────────────
-
-Step 5: M_skewの固有値分解
-
-  eigen(M_skew) → eigenvalues λ, eigenvectors V
-
-  [M_skewの固有値の性質]
-    skew-symmetricの固有値は必ず純虚数 λ = ±iω （ω ∈ ℝ）
-    → 固有ベクトルは複素共役ペア (v₁, v̄₁) で現れる
-
-  |ω|の大きい順に並べ替える（速い回転 = 強い回転から順に）
-
-─────────────────────────────────────────────────────────
+Step 5: 固有値分解
+  eigen(M_skew) → λ = ±iω, V（複素共役ペア）
+  |ω| の大きい順に並べ替え
 
 Step 6: 実数の回転平面を復元
-
-  複素共役ペア (v₁, v̄₁) から実数の平面基底を作る：
-
-  jPC1 = 2 Re(v₁)     ← 実部を2倍（正規化前）
-  jPC2 = −2 Im(v₁)    ← 虚部の−2倍（正規化前）
-
-  [なぜこの式か]
-    v₁ = Re(v₁) + i Im(v₁)
-    v̄₁ = Re(v₁) − i Im(v₁)
-    
-    v₁ + v̄₁ = 2 Re(v₁) → jPC1
-    i(v₁ − v̄₁) = i(2i Im(v₁)) = −2 Im(v₁) → jPC2
-    
-    この2つは直交し、複素固有空間と同じ部分空間を張る
-
-  各jPCを単位ベクトルに正規化。
-  net rotationが反時計回りになるよう方向を揃える。
-
-─────────────────────────────────────────────────────────
+  複素共役ペア (v₁, v̄₁) から：
+    jPC1 = Re(v₁)（実部をそのままとり正規化）
+    jPC2 = −Im(v₁)（虚部の符号を反転して正規化）
+  これらは直交し、複素固有空間と同じ部分空間を張る
 
 Step 7: データを射影
-
-  W = [jPC1; jPC2]   [2 × n_pcs]
-
-  X_jPCA = W X_red   [2 × C*T]
-
-  → 条件ごとに分割すると各条件の2D軌跡が得られる
-
-─────────────────────────────────────────────────────────
+  W = [jPC1; jPC2]  [2 × n_pcs]
+  X_jPCA = W X_red  [2 × C*T]
 
 Output:
-  W         : jPC axes（回転平面を定義する2本の軸）
-  X_jPCA    : 2D projection（各条件・各timepointの座標）
-  M_skew    : fitted dynamics matrix
-  M_unrestr : unconstrained M（比較用）
-  R²_ratio  : rotation strength（M_skew / M_unrestr）
-  θ分布     : rotation strength（角度ベース）
+  W         : jPC axes（2 × n_pcs）
+  M_skew    : fitted skew-symmetric dynamics matrix
+  R²_skew   : R² of M_skew fit
+  R²_unrestr: R² of unconstrained M fit
+  eig_freq  : eigenvalue magnitudes |ω| for each jPC pair
 ```
 
----
+### jPC1 と jPC2 がなぜ直交するか
 
-## 10. Comprehension Check
+$\mathbf{v}_1 = \mathbf{a} + i\mathbf{b}$（$\mathbf{a} = \text{Re}(\mathbf{v}_1)$, $\mathbf{b} = \text{Im}(\mathbf{v}_1)$）とおくと：
 
-実装前に以下に答えられること：
+$$\text{jPC1} \cdot \text{jPC2} = \mathbf{a} \cdot (-\mathbf{b})$$
 
-1. **M_skewの固有値がなぜ必ず純虚数か？**
-   ヒント：skew-symmetricの定義から、`v̄ᵀ M_skew v` がどんな種類の数になるかを示す。
+$M_\text{skew}$ は実 skew-symmetric なので固有値は純虚数で、複素固有ベクトルの実部と虚部が直交することが示せる（$\mathbf{a}^\top \mathbf{b} = 0$）。
 
-2. **jPC1とjPC2はなぜ必ず直交するか？**
-   ヒント：`2 Re(v₁)` と `−2 Im(v₁)` の内積を計算してみる。
+### cross-condition mean を引く理由
 
-3. **cross-condition meanを引かないと何が起きるか？**
-   ヒント：全条件に共通する強いevoked responseがあったとき、
-   M_hatはそのドリフトをどう「説明」しようとするか。
-
-4. **R²_ratio = 0.5はなぜランダムデータの期待値か？**
-   ヒント：ランダムなM_hatに対して、対称成分Sと歪対称成分Aの
-   説明力はどう配分されるか。
-
-5. **`x∧ẋ` の符号が負のとき、回転はどちら向きか？**
-   jPCAが「反時計回りを正」とするとき、θ < 0 はどう解釈するか。
-
-6. **なぜ条件数が3以上必要か？**
-   ヒント：binary conditionのとき、jPCA平面への射影は何次元になるか。
+全条件に共通する強い evoked response（例：刺激提示直後の共通反応）があると、$\hat{M}$ はその時間的ドリフトを「回転」として誤検出する。条件間の差分だけを残すことで、純粋な条件依存構造が見える。
 
 ---
 
-## 11. 参考文献
+## 7. 疑問チェック
 
-- **Churchland, M.M. et al. (2012).** Neural population dynamics during reaching. *Nature* 487, 51–56.
-  - jPCAのオリジナル論文。Fig.3が回転軌跡の可視化、Fig.6がθ分布。
-  - Supplementary Methodsにアルゴリズムの詳細。
+1. $M_\text{skew}$ の固有値がなぜ純虚数か？（→ Section 3 の証明）
+2. jPC1 ⊥ jPC2 の理由は？（→ Section 6 末尾）
+3. $R^2_\text{ratio} \approx 0.5$ がランダムの期待値な理由は？（→ Section 5）
+4. normalize=FALSE で $R^2_\text{ratio}$ が負になる理由は？（→ Section 5 注意）
+5. 条件数が 3 以上必要な理由は？（binary では jPCA 平面が 1 次元になり回転を定義できない）
+
+---
+
+## 8. 参考文献
+
+- **Churchland, M.M. et al. (2012).** Neural population dynamics during reaching. *Nature* 487, 51–56.  
+  jPCA のオリジナル論文。Fig.3: 回転軌跡の可視化、Fig.6: $\theta$ 分布。Supplementary Methods にアルゴリズム詳細。

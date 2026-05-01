@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>jPCA — 幾何的補足</title>
+<style>
+  body { font-family: 'Helvetica Neue', Arial, sans-serif; max-width: 900px;
+         margin: 40px auto; padding: 0 20px; color: #222; line-height: 1.6; }
+  h1 { border-bottom: 2px solid #444; padding-bottom: 6px; }
+  h2 { color: #333; margin-top: 2em; }
+  .fig-row { display: flex; gap: 40px; flex-wrap: wrap; margin: 24px 0; }
+  .fig-box { flex: 1; min-width: 220px; }
+  svg { display: block; margin: 0 auto; }
+  .caption { font-size: 0.87em; color: #555; margin-top: 8px; text-align: center; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+  th, td { border: 1px solid #ccc; padding: 6px 12px; text-align: left; }
+  th { background: #f4f4f4; }
+  code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 0.9em; }
+  .highlight { background: #fffbcc; border-left: 4px solid #e6c300; padding: 10px 14px; margin: 16px 0; }
+  .back { font-size: 0.85em; color: #666; }
+</style>
+</head>
+<body>
+
+<p class="back">← <a href="jPCA_notes.md">jPCA_notes.md に戻る</a></p>
+<h1>jPCA — 幾何的補足</h1>
+<p>このページは <a href="jPCA_notes.md">jPCA_notes.md</a> の Section 4（角度 θ による回転強度）の
+視覚的補足です。テキストだけではイメージしにくい <strong>jPC 平面における velocity の幾何</strong> を図で示します。</p>
+
+<!-- ====================================================================== -->
+<h2>1. jPC 平面とは</h2>
+
+<p>jPCA は N 次元の population state を、<strong>最も回転的な 2 次元平面</strong>（jPC1–jPC2 平面）に射影します。</p>
+
+<div style="text-align:center; margin: 24px 0;">
+<svg width="320" height="260" viewBox="-10 -10 320 260">
+  <!-- axes -->
+  <line x1="0" y1="130" x2="300" y2="130" stroke="#aaa" stroke-width="1.5"/>
+  <line x1="150" y1="10" x2="150" y2="250" stroke="#aaa" stroke-width="1.5"/>
+  <text x="295" y="125" font-size="13" fill="#888">jPC1</text>
+  <text x="155" y="18" font-size="13" fill="#888">jPC2</text>
+
+  <!-- rotation trajectory (ellipse-ish) -->
+  <ellipse cx="150" cy="130" rx="90" ry="70" fill="none" stroke="#2a7ae2" stroke-width="2"
+           stroke-dasharray="5,3"/>
+
+  <!-- 4 condition starting points + arrows -->
+  <!-- cond 1: top -->
+  <circle cx="150" cy="60" r="5" fill="#e24a33"/>
+  <line x1="150" y1="60" x2="210" y2="65" stroke="#e24a33" stroke-width="1.5"
+        marker-end="url(#arr)"/>
+
+  <!-- cond 2: right -->
+  <circle cx="240" cy="130" r="5" fill="#e2a733"/>
+  <line x1="240" y1="130" x2="235" y2="195" stroke="#e2a733" stroke-width="1.5"
+        marker-end="url(#arr)"/>
+
+  <!-- cond 3: bottom -->
+  <circle cx="150" cy="200" r="5" fill="#33a02c"/>
+  <line x1="150" y1="200" x2="90" y2="195" stroke="#33a02c" stroke-width="1.5"
+        marker-end="url(#arr)"/>
+
+  <!-- cond 4: left -->
+  <circle cx="60" cy="130" r="5" fill="#6a3d9a"/>
+  <line x1="60" y1="130" x2="65" y2="65" stroke="#6a3d9a" stroke-width="1.5"
+        marker-end="url(#arr)"/>
+
+  <defs>
+    <marker id="arr" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#555"/>
+    </marker>
+  </defs>
+
+  <text x="90" y="255" font-size="12" fill="#555">4 条件の軌跡（破線）と各 timepoint の velocity（矢印）</text>
+</svg>
+</div>
+
+<p>各条件の軌跡が <strong>反時計回り</strong> を描き、velocity ベクトル（矢印）が常に軌跡の接線方向を向いているとき、angle θ ≈ π/2 となります。</p>
+
+<!-- ====================================================================== -->
+<h2>2. θ の 4 ケース</h2>
+
+<div class="fig-row">
+
+  <!-- θ = +π/2: pure counter-clockwise rotation -->
+  <div class="fig-box">
+    <svg width="180" height="180" viewBox="-10 -10 180 180">
+      <line x1="0" y1="80" x2="160" y2="80" stroke="#ccc" stroke-width="1"/>
+      <line x1="80" y1="0" x2="80" y2="160" stroke="#ccc" stroke-width="1"/>
+      <!-- x at right -->
+      <circle cx="140" cy="80" r="5" fill="#2a7ae2"/>
+      <!-- dx upward (perpendicular, CCW) -->
+      <line x1="140" y1="80" x2="140" y2="30" stroke="#e24a33" stroke-width="2"
+            marker-end="url(#arr2)"/>
+      <text x="50" y="170" font-size="12" fill="#333">θ = +π/2</text>
+      <text x="25" y="185" font-size="11" fill="#888">Pure CCW rotation</text>
+      <defs>
+        <marker id="arr2" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6 Z" fill="#e24a33"/>
+        </marker>
+      </defs>
+    </svg>
+    <p class="caption">速度 <span style="color:#e24a33">ẋ</span> が位置 <span style="color:#2a7ae2">x</span> と垂直（反時計回り）<br>
+    <code>x · ẋ = 0, x ∧ ẋ > 0</code></p>
+  </div>
+
+  <!-- θ = 0: pure expansion -->
+  <div class="fig-box">
+    <svg width="180" height="180" viewBox="-10 -10 180 180">
+      <line x1="0" y1="80" x2="160" y2="80" stroke="#ccc" stroke-width="1"/>
+      <line x1="80" y1="0" x2="80" y2="160" stroke="#ccc" stroke-width="1"/>
+      <!-- x at right -->
+      <circle cx="120" cy="80" r="5" fill="#2a7ae2"/>
+      <!-- dx outward (same direction) -->
+      <line x1="120" y1="80" x2="155" y2="80" stroke="#e24a33" stroke-width="2"
+            marker-end="url(#arr3)"/>
+      <text x="55" y="170" font-size="12" fill="#333">θ = 0</text>
+      <text x="30" y="185" font-size="11" fill="#888">Pure expansion</text>
+      <defs>
+        <marker id="arr3" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6 Z" fill="#e24a33"/>
+        </marker>
+      </defs>
+    </svg>
+    <p class="caption">速度が位置と同方向（放射状に拡大）<br>
+    <code>x · ẋ > 0, x ∧ ẋ = 0</code></p>
+  </div>
+
+  <!-- θ = -π/2: pure CW rotation -->
+  <div class="fig-box">
+    <svg width="180" height="180" viewBox="-10 -10 180 180">
+      <line x1="0" y1="80" x2="160" y2="80" stroke="#ccc" stroke-width="1"/>
+      <line x1="80" y1="0" x2="80" y2="160" stroke="#ccc" stroke-width="1"/>
+      <!-- x at right -->
+      <circle cx="140" cy="80" r="5" fill="#2a7ae2"/>
+      <!-- dx downward (CW) -->
+      <line x1="140" y1="80" x2="140" y2="130" stroke="#e24a33" stroke-width="2"
+            marker-end="url(#arr4)"/>
+      <text x="50" y="170" font-size="12" fill="#333">θ = −π/2</text>
+      <text x="25" y="185" font-size="11" fill="#888">Pure CW rotation</text>
+      <defs>
+        <marker id="arr4" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6 Z" fill="#e24a33"/>
+        </marker>
+      </defs>
+    </svg>
+    <p class="caption">速度が位置と垂直（時計回り）<br>
+    <code>x · ẋ = 0, x ∧ ẋ &lt; 0</code></p>
+  </div>
+
+  <!-- θ = ±π: pure contraction -->
+  <div class="fig-box">
+    <svg width="180" height="180" viewBox="-10 -10 180 180">
+      <line x1="0" y1="80" x2="160" y2="80" stroke="#ccc" stroke-width="1"/>
+      <line x1="80" y1="0" x2="80" y2="160" stroke="#ccc" stroke-width="1"/>
+      <!-- x at right -->
+      <circle cx="140" cy="80" r="5" fill="#2a7ae2"/>
+      <!-- dx inward (opposite direction) -->
+      <line x1="140" y1="80" x2="100" y2="80" stroke="#e24a33" stroke-width="2"
+            marker-end="url(#arr5)"/>
+      <text x="50" y="170" font-size="12" fill="#333">θ = ±π</text>
+      <text x="25" y="185" font-size="11" fill="#888">Pure contraction</text>
+      <defs>
+        <marker id="arr5" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6 Z" fill="#e24a33"/>
+        </marker>
+      </defs>
+    </svg>
+    <p class="caption">速度が位置と逆方向（原点に収束）<br>
+    <code>x · ẋ &lt; 0, x ∧ ẋ = 0</code></p>
+  </div>
+
+</div>
+
+<!-- ====================================================================== -->
+<h2>3. θ 分布の読み方</h2>
+
+<p>すべての (条件 c, 時刻 t) について θ を計算し、ヒストグラムを作ります。</p>
+
+<div style="text-align:center; margin: 24px 0;">
+<svg width="480" height="220" viewBox="0 0 480 220">
+  <!-- axis -->
+  <line x1="40" y1="180" x2="440" y2="180" stroke="#444" stroke-width="1.5"/>
+  <line x1="40" y1="20" x2="40" y2="180" stroke="#444" stroke-width="1.5"/>
+  <!-- x labels -->
+  <text x="38" y="198" font-size="12" text-anchor="middle" fill="#555">−π</text>
+  <text x="113" y="198" font-size="12" text-anchor="middle" fill="#555">−π/2</text>
+  <text x="240" y="198" font-size="12" text-anchor="middle" fill="#555">0</text>
+  <text x="317" y="198" font-size="12" text-anchor="middle" fill="#555">π/2</text>
+  <text x="440" y="198" font-size="12" text-anchor="middle" fill="#555">π</text>
+  <!-- tick marks -->
+  <line x1="113" y1="178" x2="113" y2="185" stroke="#666"/>
+  <line x1="240" y1="178" x2="240" y2="185" stroke="#666"/>
+  <line x1="317" y1="178" x2="317" y2="185" stroke="#666"/>
+
+  <!-- "rotational data" distribution: peaked at π/2 -->
+  <polyline points="40,175 80,170 113,158 150,130 180,100 200,75 220,55 240,50
+                    260,55 290,80 317,50 340,40 360,55 380,90 400,130 420,160 440,172"
+            fill="none" stroke="#2a7ae2" stroke-width="2.5"/>
+  <!-- peak annotation -->
+  <line x1="317" y1="35" x2="317" y2="50" stroke="#2a7ae2" stroke-dasharray="3,2"/>
+  <text x="317" y="30" font-size="12" text-anchor="middle" fill="#2a7ae2">peak ≈ π/2</text>
+  <text x="150" y="25" font-size="12" fill="#2a7ae2">Rotational data</text>
+
+  <!-- "random data" distribution: flat -->
+  <polyline points="40,158 113,160 240,162 317,160 440,158"
+            fill="none" stroke="#e24a33" stroke-width="2" stroke-dasharray="6,3"/>
+  <text x="150" y="45" font-size="12" fill="#e24a33">Random data (flat)</text>
+
+  <!-- y-axis label -->
+  <text x="10" y="110" font-size="12" fill="#555" transform="rotate(-90, 10, 110)">density</text>
+</svg>
+</div>
+
+<table>
+  <tr><th>θ 分布の形</th><th>解釈</th></tr>
+  <tr><td>π/2 にシャープなピーク</td><td>強い rotational dynamics（jPCA が有効）</td></tr>
+  <tr><td>0 付近にピーク</td><td>expansion/contraction が支配的</td></tr>
+  <tr><td>フラット</td><td>構造なし（ランダムノイズ）</td></tr>
+</table>
+
+<p>Churchland 2012 Fig.6a では、運動野の実データと generator model がともに π/2 にピークを持ち、velocity-tuned model や EMG データはピークが 0 付近にあることが示されている。</p>
+
+<!-- ====================================================================== -->
+<h2>4. ピーク角度のバイアスについて</h2>
+
+<div class="highlight">
+<p><strong>実装上の注意（jPCA_lib.R での観察）：</strong><br>
+純粋な回転データ（<code>omega = 0.2</code>）で <code>jpca_rotation_strength()</code> を実行すると、
+ピーク角度は理論値 π/2 ≈ 1.571 よりも大きく（≈ 1.775）なる。これは 2 つの系統的バイアスに由来する：</p>
+<ol>
+  <li><strong>有限差分バイアス</strong>：連続時間の円運動 <code>θ(t)=ωt</code> を有限差分で近似すると、
+  1 timepoint 分の時間遅れ（= ω/2 rad の付加位相）で速度が計算される。
+  <code>omega=0.2</code> のとき +0.1 rad 程度のバイアス。</li>
+  <li><strong>正規化バイアス</strong>：PC ごとの軸スケールが違うと jPC 平面が楕円状に歪み、
+  <code>atan2</code> で計算される角度がシフトする。<code>normalize=TRUE</code> を使っても完全には解消されない。</li>
+</ol>
+<p>このバイアスは系統的なものであり、ノイズとは無関係。閾値 <code>|peak − π/2| &lt; 0.3</code>
+  でのテスト合格は意図的な許容範囲。</p>
+</div>
+
+</body>
+</html>
