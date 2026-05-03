@@ -1,1 +1,15 @@
 CLAUDE.md
+ARCHITECTURE_demixed_j_PCA.md
+
+# Japanese-language notes (personal study)
+*_ja.md
+*_ja.html
+README_ja.md
+ref/jPCA_notes.md
+ref/dPCA_notes.md
+
+# macOS
+.DS_Store
+**/.DS_Store
+ref/.DS_Store
+original/**/__pycache__/
