@@ -16,3 +16,4 @@ dPCA/
 **/.DS_Store
 ref/.DS_Store
 original/**/__pycache__/
+*.pdf
