@@ -11,6 +11,7 @@
 #   dpca_inverse_transform     -- reconstruct data from latent components
 #   dpca_reconstruct           -- fit_transform + inverse in one call
 #   dpca_significance          -- cross-validated significance masks
+#   dpca_plot                  -- ggplot2 panel: each marginalization × component
 #
 # Data convention:
 #   X  : array [N, d1, d2, ...] where N = neurons/channels
@@ -603,4 +604,92 @@ dpca_significance <- function(X, trialX,
   }
 
   masks
+}
+
+
+# ------------------------------------------------------------------------------
+# dpca_plot
+# ------------------------------------------------------------------------------
+# Reproduce the canonical dPCA demo figure (Kobak 2016) using ggplot2.
+#
+# Panels: columns = marginalizations, rows = components (1..n_comp_show).
+# Within each panel: one line per stimulus condition, x = time.
+# Assumes the first non-time dimension is the stimulus dimension (dim 2 of Z).
+#
+# Parameters:
+#   Z            : output of dpca_transform (named list of arrays [k, S, T, ...])
+#   model        : output of dpca_fit (used for labels and dx)
+#   time         : numeric vector length T, default 1:T
+#   n_comp_show  : number of components to show per marginalization (default 1)
+#   stim_labels  : character vector length S for legend labels (default "s1",..)
+#   marg_order   : character vector to set panel column order; default = names(Z)
+#   palette      : color palette passed to scale_color_brewer (default "Set1")
+#
+# Returns: a ggplot object
+# ------------------------------------------------------------------------------
+dpca_plot <- function(Z, model,
+                      time        = NULL,
+                      n_comp_show = 1L,
+                      stim_labels = NULL,
+                      marg_order  = NULL,
+                      palette     = "Set1") {
+
+  if (!requireNamespace("ggplot2", quietly = TRUE))
+    stop("ggplot2 is required. Install it with: install.packages('ggplot2')")
+
+  # --- dimensions -----------------------------------------------------------
+  dx <- model$dx                          # e.g. c(S, T) for labels="st"
+  S  <- dx[1L]
+  T  <- dx[length(dx)]
+  if (is.null(time)) time <- seq_len(T)
+  if (length(time) != T)
+    stop("'time' must have length equal to the time dimension of Z")
+
+  if (is.null(stim_labels)) stim_labels <- paste0("s", seq_len(S))
+  if (length(stim_labels) != S)
+    stop("'stim_labels' must have length S = ", S)
+
+  marg_names <- if (!is.null(marg_order)) marg_order else names(Z)
+
+  # --- build long data frame ------------------------------------------------
+  rows <- list()
+  for (marg in marg_names) {
+    Zm  <- Z[[marg]]                      # [k, S, T]
+    k   <- dim(Zm)[1L]
+    n_show <- min(n_comp_show, k)
+    for (comp in seq_len(n_show)) {
+      for (s in seq_len(S)) {
+        rows[[length(rows) + 1L]] <- data.frame(
+          marg  = marg,
+          comp  = paste0("comp ", comp),
+          stim  = stim_labels[s],
+          time  = time,
+          value = Zm[comp, s, ],
+          stringsAsFactors = FALSE
+        )
+      }
+    }
+  }
+  df <- do.call(rbind, rows)
+
+  # factor ordering for facets
+  df$marg <- factor(df$marg, levels = marg_names)
+  df$comp <- factor(df$comp, levels = paste0("comp ", seq_len(n_comp_show)))
+  df$stim <- factor(df$stim, levels = stim_labels)
+
+  # --- plot ------------------------------------------------------------------
+  p <- ggplot2::ggplot(df, ggplot2::aes(
+         x = time, y = value, colour = stim, group = stim)) +
+    ggplot2::geom_line(linewidth = 0.8) +
+    ggplot2::facet_grid(comp ~ marg, scales = "free_y") +
+    ggplot2::scale_colour_brewer(palette = palette, name = "Stimulus") +
+    ggplot2::labs(x = "Time", y = "Component activity") +
+    ggplot2::theme_classic(base_size = 11) +
+    ggplot2::theme(
+      strip.background = ggplot2::element_rect(fill = "#f0f0f0", colour = "grey60"),
+      strip.text       = ggplot2::element_text(face = "bold"),
+      legend.position  = "right"
+    )
+
+  p
 }
