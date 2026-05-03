@@ -85,14 +85,11 @@ demixed_j_PCA/
 │
 ├── resource/
 │   ├── jPCA_notes_en.md          # jPCA math notes (English)
-│   ├── demixedPCA_notes_en.md    # dPCA math notes (English)
+│   ├── demixedPCA_notes_en.md    # dPCA math notes (English, comprehensive)
 │   ├── jPCA_test_results_en.md   # test explanation (English)
 │   ├── demixedPCA_test_results_en.md
 │   ├── jPCA_geometry.html        # visual supplement for jPCA geometry
 │   └── dPCA_anova_decomp.html    # visual supplement for ANOVA decomposition
-│
-├── ref/
-│   └── demixedPCA_notes2.md      # English math notes (reference)
 │
 ├── visualizations/
 │   ├── vis_jpca_test.R           # ggplot2 figures
@@ -100,8 +97,7 @@ demixed_j_PCA/
 │   ├── fig2_angle_distributions.png
 │   └── fig3_R2_comparison.png
 │
-└── original/                     # reference Python / MATLAB implementation
-    └── dPCA/
+└── dPCA/                         # reference Python / MATLAB implementation (gitignored)
 ```
 
 ---
