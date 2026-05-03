@@ -9,6 +9,49 @@ R implementations of **demixed PCA (dPCA)** and **jPCA** for analysing populatio
 
 ---
 
+## Original Work & Attribution
+
+This repository implements two published methods in R.
+All scientific credit belongs to the original authors.
+
+### demixed PCA (dPCA)
+
+**Paper:**
+> D Kobak, W Brendel, C Constantinidis, CE Feierstein, A Kepecs, ZF Mainen,
+> X-L Qi, R Romo, N Uchida, CK Machens  
+> *Demixed principal component analysis of neural population data*  
+> **eLife** 2016, 5:e10989  
+> <https://elifesciences.org/content/5/e10989>  
+> DOI: 10.7554/eLife.10989
+
+**Original code (Python + MATLAB):**  
+<https://github.com/machenslab/dPCA>  
+Maintained by the Machens Lab (BCCN Munich / Champalimaud Centre for the Unknown).  
+The reference implementation (Python `dPCA` class and MATLAB `dpca_*.m` functions)
+is included in `dPCA/` for reference.
+
+### jPCA
+
+**Paper:**
+> MM Churchland, J Cunningham, MT Kaufman, JD Foster, P Nuyujukian,
+> SI Ryu, KV Shenoy  
+> *Neural population dynamics during reaching*  
+> **Nature** 2012, 487, 51–56  
+> DOI: 10.1038/nature11129
+
+**Original code (MATLAB):**  
+Distributed by the Shenoy Lab (Stanford).  
+The original MATLAB scripts are the basis for the `jPCA_lib.R` implementation.
+
+### Relationship to original code
+
+Both R libraries are independent re-implementations written from scratch, using only
+the published algorithms as reference.  They do **not** wrap, link to, or redistribute
+the original code.  The `dPCA/` subdirectory contains the upstream Python package
+as a read-only reference copy (original license: `dPCA/License.md`).
+
+---
+
 ## Overview
 
 Standard PCA mixes task-parameter variance (stimulus, rule, time) into each component, making interpretation difficult.

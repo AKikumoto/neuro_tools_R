@@ -11,7 +11,7 @@
 #   dpca_inverse_transform     -- reconstruct data from latent components
 #   dpca_reconstruct           -- fit_transform + inverse in one call
 #   dpca_significance          -- cross-validated significance masks
-#   dpca_plot                  -- ggplot2 panel: each marginalization × component
+#   dpca_plot                  -- full-figure plot (MATLAB dpca_plot equivalent)
 #
 # Data convention:
 #   X  : array [N, d1, d2, ...] where N = neurons/channels
@@ -610,86 +610,346 @@ dpca_significance <- function(X, trialX,
 # ------------------------------------------------------------------------------
 # dpca_plot
 # ------------------------------------------------------------------------------
-# Reproduce the canonical dPCA demo figure (Kobak 2016) using ggplot2.
+# Full-figure dPCA plot, equivalent to the MATLAB dpca_plot() from Kobak 2016.
 #
-# Panels: columns = marginalizations, rows = components (1..n_comp_show).
-# Within each panel: one line per stimulus condition, x = time.
-# Assumes the first non-time dimension is the stimulus dimension (dim 2 of Z).
+# Layout (assembled with patchwork when available):
+#   Left column  (optional, requires explained variance):
+#     - Top    : cumulative explained variance curve
+#     - Middle : per-component stacked bar (colour = marginalization)
+#     - Bottom : pie chart of total EV by marginalization
+#   Main grid:
+#     - rows    = marginalizations (in marg_order)
+#     - columns = top n_comp_show components per marginalization
+#     - lines   = stimulus conditions
+#     - shading = significant time windows (if signif provided)
+#     - dashed vertical lines = time events (if time_events provided)
 #
 # Parameters:
-#   Z            : output of dpca_transform (named list of arrays [k, S, T, ...])
-#   model        : output of dpca_fit (used for labels and dx)
-#   time         : numeric vector length T, default 1:T
-#   n_comp_show  : number of components to show per marginalization (default 1)
-#   stim_labels  : character vector length S for legend labels (default "s1",..)
-#   marg_order   : character vector to set panel column order; default = names(Z)
-#   palette      : color palette passed to scale_color_brewer (default "Set1")
+#   Z            : output of dpca_transform  [named list of arrays, each k×S×T]
+#   model        : output of dpca_fit
+#   time         : numeric vector length T  (default 1:T)
+#   n_comp_show  : components per marginalization to show (default 3)
+#   stim_labels  : character[S] — legend labels (default "s1","s2",...)
+#   marg_order   : character — column order of marginalizations (default names(Z))
+#   marg_colours : named character[M] — hex/R colours per marginalization
+#   marg_names   : named character[M] — display names per marginalization
+#   time_events  : numeric — x positions for vertical event markers
+#   signif       : named list of logical matrices [k × T], from dpca_significance()
+#   show_ev      : logical — show left-column EV panels (default TRUE)
+#   palette      : RColorBrewer name for stimulus colours (default "Set1")
 #
-# Returns: a ggplot object
+# Returns:
+#   If patchwork is installed: a patchwork object (print to display)
+#   Otherwise: a named list of ggplot objects
 # ------------------------------------------------------------------------------
 dpca_plot <- function(Z, model,
-                      time        = NULL,
-                      n_comp_show = 1L,
-                      stim_labels = NULL,
-                      marg_order  = NULL,
-                      palette     = "Set1") {
+                      time         = NULL,
+                      n_comp_show  = 3L,
+                      stim_labels  = NULL,
+                      marg_order   = NULL,
+                      marg_colours = NULL,
+                      marg_names   = NULL,
+                      time_events  = NULL,
+                      signif       = NULL,
+                      show_ev      = TRUE,
+                      palette      = "Set1") {
 
   if (!requireNamespace("ggplot2", quietly = TRUE))
     stop("ggplot2 is required. Install it with: install.packages('ggplot2')")
 
-  # --- dimensions -----------------------------------------------------------
-  dx <- model$dx                          # e.g. c(S, T) for labels="st"
+  g <- ggplot2::ggplot   # shorthand
+
+  # ---------------------------------------------------------------------------
+  # 0. Dimensions and defaults
+  # ---------------------------------------------------------------------------
+  dx <- model$dx
   S  <- dx[1L]
   T  <- dx[length(dx)]
   if (is.null(time)) time <- seq_len(T)
   if (length(time) != T)
-    stop("'time' must have length equal to the time dimension of Z")
+    stop("'time' must have length equal to the time dimension of Z (", T, ")")
+
+  marg_keys <- if (!is.null(marg_order)) marg_order else names(Z)
+  M <- length(marg_keys)
 
   if (is.null(stim_labels)) stim_labels <- paste0("s", seq_len(S))
-  if (length(stim_labels) != S)
-    stop("'stim_labels' must have length S = ", S)
 
-  marg_names <- if (!is.null(marg_order)) marg_order else names(Z)
+  # marginalization display names
+  if (is.null(marg_names)) {
+    mn <- setNames(marg_keys, marg_keys)
+  } else {
+    mn <- setNames(as.character(marg_names), marg_keys)
+  }
 
-  # --- build long data frame ------------------------------------------------
-  rows <- list()
-  for (marg in marg_names) {
-    Zm  <- Z[[marg]]                      # [k, S, T]
-    k   <- dim(Zm)[1L]
+  # marginalization colours (one per key)
+  default_marg_cols <- c(
+    "#4393C3", "#D6604D", "#74C476", "#9E7EC8",
+    "#F4A582", "#A6D96A", "#FDB863", "#B2ABD2"
+  )
+  if (is.null(marg_colours)) {
+    mc <- setNames(default_marg_cols[seq_len(M)], marg_keys)
+  } else {
+    mc <- setNames(as.character(marg_colours), marg_keys)
+  }
+
+  # explained variance per component (from dpca_transform attribute)
+  ev_list <- attr(Z, "explained_variance_ratio")
+
+  # ---------------------------------------------------------------------------
+  # helper: theme for component panels
+  # ---------------------------------------------------------------------------
+  theme_comp <- function(show_x = TRUE, show_y = TRUE) {
+    t <- ggplot2::theme_classic(base_size = 10) +
+      ggplot2::theme(
+        plot.margin   = ggplot2::margin(2, 4, 2, 4),
+        legend.position = "none"
+      )
+    if (!show_x) t <- t + ggplot2::theme(
+      axis.text.x  = ggplot2::element_blank(),
+      axis.ticks.x = ggplot2::element_blank(),
+      axis.title.x = ggplot2::element_blank()
+    )
+    if (!show_y) t <- t + ggplot2::theme(
+      axis.text.y  = ggplot2::element_blank(),
+      axis.ticks.y = ggplot2::element_blank(),
+      axis.title.y = ggplot2::element_blank()
+    )
+    t
+  }
+
+  # ---------------------------------------------------------------------------
+  # 1. Component time-series panels
+  # ---------------------------------------------------------------------------
+  stim_fct <- factor(stim_labels, levels = stim_labels)
+
+  panels <- list()
+  for (mi in seq_len(M)) {
+    marg <- marg_keys[mi]
+    Zm   <- Z[[marg]]             # [k, S, T]
+    k    <- dim(Zm)[1L]
     n_show <- min(n_comp_show, k)
-    for (comp in seq_len(n_show)) {
+    ev_k   <- if (!is.null(ev_list)) ev_list[[marg]] else NULL
+
+    for (ci in seq_len(n_show)) {
+      # significance shading region data
+      shade_df <- NULL
+      if (!is.null(signif) && !is.null(signif[[marg]])) {
+        sig_row <- signif[[marg]][ci, ]
+        if (any(sig_row)) {
+          rle_sig  <- rle(sig_row)
+          ends     <- cumsum(rle_sig$lengths)
+          starts   <- ends - rle_sig$lengths + 1L
+          runs     <- which(rle_sig$values)
+          shade_df <- data.frame(
+            xmin = time[starts[runs]],
+            xmax = time[ends[runs]]
+          )
+        }
+      }
+
+      # line data
+      line_rows <- vector("list", S)
       for (s in seq_len(S)) {
-        rows[[length(rows) + 1L]] <- data.frame(
-          marg  = marg,
-          comp  = paste0("comp ", comp),
-          stim  = stim_labels[s],
+        line_rows[[s]] <- data.frame(
           time  = time,
-          value = Zm[comp, s, ],
+          value = Zm[ci, s, ],
+          stim  = stim_fct[s],
+          stringsAsFactors = FALSE
+        )
+      }
+      df <- do.call(rbind, line_rows)
+      df$stim <- factor(df$stim, levels = stim_labels)
+
+      # panel title
+      ev_pct <- if (!is.null(ev_k)) sprintf(" [%.1f%%]", ev_k[ci] * 100) else ""
+      ptitle <- sprintf("%s comp %d%s", mn[[marg]], ci, ev_pct)
+
+      p <- g(df, ggplot2::aes(x = time, y = value,
+                               colour = stim, group = stim)) +
+        ggplot2::ggtitle(ptitle) +
+        ggplot2::geom_hline(yintercept = 0, colour = "grey80", linewidth = 0.3)
+
+      # significance shading
+      if (!is.null(shade_df) && nrow(shade_df) > 0) {
+        ymax_val <- max(abs(df$value), na.rm = TRUE) * 1.1
+        p <- p + ggplot2::geom_rect(
+          data = shade_df,
+          ggplot2::aes(xmin = xmin, xmax = xmax,
+                       ymin = -Inf, ymax = Inf),
+          fill = mc[[marg]], alpha = 0.15,
+          inherit.aes = FALSE
+        )
+      }
+
+      # time events
+      if (!is.null(time_events)) {
+        ev_df <- data.frame(xint = time_events)
+        p <- p + ggplot2::geom_vline(
+          data = ev_df,
+          ggplot2::aes(xintercept = xint),
+          colour = "grey60", linewidth = 0.4, linetype = "dashed"
+        )
+      }
+
+      # lines
+      p <- p +
+        ggplot2::geom_line(linewidth = 0.7) +
+        ggplot2::scale_colour_brewer(palette = palette, name = "Stimulus") +
+        ggplot2::labs(x = "Time", y = "Activity") +
+        # marginalization colour strip on right side
+        ggplot2::theme_classic(base_size = 10) +
+        ggplot2::theme(
+          plot.title      = ggplot2::element_text(size = 8, hjust = 0.5,
+                                                  colour = mc[[marg]],
+                                                  face = "bold"),
+          plot.background = ggplot2::element_rect(
+            fill = "white",
+            colour = mc[[marg]], linewidth = 1.2
+          ),
+          plot.margin     = ggplot2::margin(3, 5, 3, 5),
+          legend.position = if (mi == 1 && ci == 1) "right" else "none",
+          axis.text.x  = if (mi < M) ggplot2::element_blank() else ggplot2::element_text(),
+          axis.ticks.x = if (mi < M) ggplot2::element_blank() else ggplot2::element_line(),
+          axis.title.x = if (mi < M) ggplot2::element_blank() else ggplot2::element_text(),
+          axis.text.y  = if (ci > 1)  ggplot2::element_blank() else ggplot2::element_text(),
+          axis.ticks.y = if (ci > 1)  ggplot2::element_blank() else ggplot2::element_line(),
+          axis.title.y = if (ci > 1)  ggplot2::element_blank() else ggplot2::element_text()
+        )
+
+      panels[[paste0(marg, "_", ci)]] <- p
+    }
+  }
+
+  # ---------------------------------------------------------------------------
+  # 2. EV panels (left column)
+  # ---------------------------------------------------------------------------
+  ev_panels <- list()
+
+  if (show_ev && !is.null(ev_list)) {
+
+    # build long data frame of all per-component EVs
+    ev_rows <- list()
+    for (marg in marg_keys) {
+      ev_k <- ev_list[[marg]]
+      n_show <- min(n_comp_show, length(ev_k))
+      for (ci in seq_len(n_show)) {
+        ev_rows[[length(ev_rows) + 1L]] <- data.frame(
+          marg     = marg,
+          comp_lbl = paste0(mn[[marg]], ci),
+          comp_idx = (match(marg, marg_keys) - 1L) * n_comp_show + ci,
+          ev_pct   = ev_k[ci] * 100,
           stringsAsFactors = FALSE
         )
       }
     }
+    ev_df <- do.call(rbind, ev_rows)
+    ev_df$comp_lbl <- factor(ev_df$comp_lbl,
+                              levels = ev_df$comp_lbl[order(ev_df$comp_idx)])
+    ev_df$marg     <- factor(ev_df$marg, levels = marg_keys)
+
+    # 2a. stacked bar (one column per component, fill = marg colour)
+    bar_colours <- setNames(mc[marg_keys], marg_keys)
+    p_bar <- g(ev_df, ggplot2::aes(x = comp_lbl, y = ev_pct, fill = marg)) +
+      ggplot2::geom_col(width = 0.75) +
+      ggplot2::scale_fill_manual(values = bar_colours, guide = "none") +
+      ggplot2::labs(x = "Component", y = "Variance explained (%)") +
+      ggplot2::theme_classic(base_size = 9) +
+      ggplot2::theme(
+        axis.text.x  = ggplot2::element_text(angle = 45, hjust = 1, size = 7),
+        plot.margin  = ggplot2::margin(4, 4, 4, 4)
+      )
+    ev_panels[["bar"]] <- p_bar
+
+    # 2b. cumulative EV
+    cum_rows <- list()
+    running  <- 0
+    for (marg in marg_keys) {
+      ev_k <- ev_list[[marg]]
+      n_show <- min(n_comp_show, length(ev_k))
+      for (ci in seq_len(n_show)) {
+        running <- running + ev_k[ci] * 100
+        cum_rows[[length(cum_rows) + 1L]] <- data.frame(
+          idx    = length(cum_rows) + 1L,
+          cumev  = running,
+          marg   = marg,
+          stringsAsFactors = FALSE
+        )
+      }
+    }
+    cum_df <- do.call(rbind, cum_rows)
+    cum_df$marg <- factor(cum_df$marg, levels = marg_keys)
+
+    p_cum <- g(cum_df, ggplot2::aes(x = idx, y = cumev)) +
+      ggplot2::geom_line(colour = "grey30", linewidth = 0.8) +
+      ggplot2::geom_point(ggplot2::aes(colour = marg), size = 2.5) +
+      ggplot2::scale_colour_manual(values = mc, guide = "none") +
+      ggplot2::scale_y_continuous(limits = c(0, 100)) +
+      ggplot2::labs(x = "Component", y = "Cumulative EV (%)") +
+      ggplot2::theme_classic(base_size = 9) +
+      ggplot2::theme(plot.margin = ggplot2::margin(4, 4, 4, 4))
+    ev_panels[["cum"]] <- p_cum
+
+    # 2c. pie chart (total EV per marginalization)
+    pie_rows <- lapply(marg_keys, function(m) {
+      data.frame(marg = m, total = sum(ev_list[[m]]) * 100,
+                 stringsAsFactors = FALSE)
+    })
+    pie_df <- do.call(rbind, pie_rows)
+    pie_df$marg  <- factor(pie_df$marg, levels = marg_keys)
+    pie_df$label <- sprintf("%s\n%.0f%%", mn[marg_keys], pie_df$total)
+
+    p_pie <- g(pie_df, ggplot2::aes(x = "", y = total,
+                                     fill = marg, label = label)) +
+      ggplot2::geom_col(width = 1, colour = "white") +
+      ggplot2::geom_text(position = ggplot2::position_stack(vjust = 0.5),
+                         size = 2.8) +
+      ggplot2::coord_polar("y") +
+      ggplot2::scale_fill_manual(values = mc, guide = "none") +
+      ggplot2::labs(x = NULL, y = NULL,
+                    title = "Total EV\nper factor") +
+      ggplot2::theme_void(base_size = 9) +
+      ggplot2::theme(
+        plot.title  = ggplot2::element_text(size = 8, hjust = 0.5),
+        plot.margin = ggplot2::margin(4, 4, 4, 4)
+      )
+    ev_panels[["pie"]] <- p_pie
   }
-  df <- do.call(rbind, rows)
 
-  # factor ordering for facets
-  df$marg <- factor(df$marg, levels = marg_names)
-  df$comp <- factor(df$comp, levels = paste0("comp ", seq_len(n_comp_show)))
-  df$stim <- factor(df$stim, levels = stim_labels)
+  # ---------------------------------------------------------------------------
+  # 3. Assemble with patchwork (if available) or return list
+  # ---------------------------------------------------------------------------
+  all_panels <- c(panels, ev_panels)
 
-  # --- plot ------------------------------------------------------------------
-  p <- ggplot2::ggplot(df, ggplot2::aes(
-         x = time, y = value, colour = stim, group = stim)) +
-    ggplot2::geom_line(linewidth = 0.8) +
-    ggplot2::facet_grid(comp ~ marg, scales = "free_y") +
-    ggplot2::scale_colour_brewer(palette = palette, name = "Stimulus") +
-    ggplot2::labs(x = "Time", y = "Component activity") +
-    ggplot2::theme_classic(base_size = 11) +
-    ggplot2::theme(
-      strip.background = ggplot2::element_rect(fill = "#f0f0f0", colour = "grey60"),
-      strip.text       = ggplot2::element_text(face = "bold"),
-      legend.position  = "right"
-    )
+  if (!requireNamespace("patchwork", quietly = TRUE)) {
+    message("Install patchwork for automatic layout: install.packages('patchwork')")
+    return(invisible(all_panels))
+  }
+  suppressPackageStartupMessages(library(patchwork, warn.conflicts = FALSE))
 
-  p
+  # build main grid: M rows × n_comp_show columns
+  grid_plots <- list()
+  for (mi in seq_len(M)) {
+    marg   <- marg_keys[mi]
+    n_show <- min(n_comp_show, dim(Z[[marg]])[1L])
+    for (ci in seq_len(n_comp_show)) {
+      key <- paste0(marg, "_", ci)
+      grid_plots[[length(grid_plots) + 1L]] <-
+        if (ci <= n_show) panels[[key]] else patchwork::plot_spacer()
+    }
+  }
+
+  main_grid <- patchwork::wrap_plots(grid_plots,
+                                     ncol = n_comp_show, nrow = M)
+
+  if (length(ev_panels) == 3) {
+    left_col <- (ev_panels[["cum"]] / ev_panels[["bar"]] / ev_panels[["pie"]]) +
+      patchwork::plot_layout(heights = c(1, 1, 1))
+
+    result <- left_col | main_grid
+    result <- result + patchwork::plot_layout(widths = c(1, n_comp_show))
+  } else {
+    result <- main_grid
+  }
+
+  result
 }
