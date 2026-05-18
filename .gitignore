@@ -8,8 +8,9 @@ README_ja.md
 ref/jPCA_notes.md
 ref/dPCA_notes.md
 
-# Original upstream toolbox (reference copy, not tracked)
+# Original upstream toolboxes (reference copies, not tracked)
 dPCA/
+original/
 
 # macOS
 .DS_Store
