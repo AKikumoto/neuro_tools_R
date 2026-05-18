@@ -17,3 +17,6 @@ dPCA/
 ref/.DS_Store
 original/**/__pycache__/
 *.pdf
+
+# Manuscripts
+manuscripts/
