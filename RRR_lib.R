@@ -4,14 +4,17 @@
 # MATLAB/Python originals: https://github.com/bichanw/RRR
 #
 # Functions:
-#   rrr_simulate         -- generate data from the RRR generative model Y = X U V^T + E
-#   rrr_fit              -- standard RRR: rank-r projection of OLS/ridge estimate
-#   rrr_transform        -- predict Y_hat = X W
-#   rrr_r2               -- R²: fraction of Y variance explained
-#   rrr_cv_rank          -- cross-validated rank and lambda selection
-#   rrr_fit_noniso       -- full-covariance RRR (coordinate ascent, non-spherical noise)
-#   rrr_alignment_input  -- input alignment index alpha_in  in [0, 1]
-#   rrr_alignment_output -- output alignment index alpha_out in [0, 1] + comm_frac
+#   rrr_simulate              -- generate data from the RRR generative model Y = X U V^T + E
+#   rrr_fit                   -- standard RRR: rank-r projection of OLS/ridge estimate
+#   rrr_transform             -- predict Y_hat = X W
+#   rrr_r2                    -- R²: fraction of Y variance explained
+#   rrr_cv_rank               -- cross-validated rank and lambda selection
+#   rrr_fit_noniso            -- full-covariance RRR (coordinate ascent, non-spherical noise)
+#   rrr_alignment_input       -- input alignment index alpha_in  in [0, 1]
+#   rrr_alignment_output      -- output alignment index alpha_out in [0, 1] + comm_frac
+#   rrr_plot_cv_r2            -- held-out R² vs rank curve (rank selection aid)
+#   rrr_plot_alignment_input  -- input variance vs communicated variance per PC (fig 5)
+#   rrr_plot_alignment_output -- output alignment 3-panel plot (fig 6)
 #
 # Data convention:
 #   X : matrix [T x m]   input-region activity, centered per column
@@ -620,4 +623,187 @@ rrr_alignment_output <- function(X, Y, W) {
   alpha_out <- (a_raw - a_min) / (a_max - a_min)    # eq. 47
 
   list(alpha_out = alpha_out, comm_frac = commfrac)
+}
+
+
+# ==============================================================================
+# Visualization
+# ==============================================================================
+
+# =========================================================================
+# rrr_plot_cv_r2: HELD-OUT R² VS RANK CURVE
+# =========================================================================
+# [Role]:
+#   Plot the cross-validated R² matrix from rrr_cv_rank as rank-vs-R² lines,
+#   one line per lambda. A dashed vertical line marks the selected best_rank.
+#   Primary use: visually confirm that the CV peak is well-defined and not
+#   at the boundary of max_rank.
+#
+# [Inputs]:
+#   cv_result : list output of rrr_cv_rank ($best_rank, $best_lambda, $cv_r2)
+#
+# [Outputs]:
+#   ggplot object
+#
+# [Notes]:
+#   - When lambda_grid has length 1 the legend is suppressed.
+#   - Requires ggplot2.
+# =========================================================================
+rrr_plot_cv_r2 <- function(cv_result) {
+  mat      <- cv_result$cv_r2
+  n_lambda <- ncol(mat)
+
+  df <- data.frame(
+    rank   = rep(seq_len(nrow(mat)), times = n_lambda),
+    r2     = as.vector(mat),
+    lambda = rep(colnames(mat), each = nrow(mat))
+  )
+
+  p <- ggplot2::ggplot(df, ggplot2::aes(x = rank, y = r2,
+                                        color = lambda, group = lambda)) +
+    ggplot2::geom_line() +
+    ggplot2::geom_point(size = 2) +
+    ggplot2::geom_vline(xintercept = cv_result$best_rank,
+                        linetype = "dashed", color = "grey40") +
+    ggplot2::scale_x_continuous(breaks = seq_len(nrow(mat))) +
+    ggplot2::labs(x = "rank", y = "held-out R²", color = "λ") +
+    ggplot2::theme_classic()
+
+  if (n_lambda == 1) p <- p + ggplot2::theme(legend.position = "none")
+  p
+}
+
+
+# =========================================================================
+# rrr_plot_alignment_input: INPUT VARIANCE VS COMMUNICATED VARIANCE PER PC
+# =========================================================================
+# [Role]:
+#   Visualize how communication weight W relates to the input PC structure.
+#   For each input PC dimension, shows the fraction of population variance
+#   (input eigenspectrum) alongside the fraction of communication variance
+#   contributed by that PC. alpha_in is annotated in the upper-right corner.
+#   Corresponds to Wu & Pillow (2025) Fig. 5.
+#
+# [Inputs]:
+#   X : matrix [T x m], centered input activity
+#   W : matrix [m x n], communication weight matrix
+#   C : matrix [m x m] (optional), input covariance; if NULL use cov(X)
+#
+# [Outputs]:
+#   ggplot object
+#
+# [Notes]:
+#   - Communicated variance per PC: diag(U_pca^T W W^T U_pca), then normalized.
+#   - Requires ggplot2.
+# =========================================================================
+rrr_plot_alignment_input <- function(X, W, C = NULL) {
+  if (is.null(C)) C <- cov(X)
+  m     <- nrow(W)
+  eig_C <- eigen(C, symmetric = TRUE)
+  U_pca <- eig_C$vectors
+
+  pc_var   <- eig_C$values
+  comm_var <- diag(t(U_pca) %*% W %*% t(W) %*% U_pca)
+
+  alpha_in <- rrr_alignment_input(X, W, C = C)
+
+  df <- data.frame(
+    dim      = rep(seq_len(m), 2),
+    variance = c(pc_var / sum(pc_var), comm_var / sum(comm_var)),
+    type     = rep(c("input variance", "communicated variance"), each = m)
+  )
+
+  ggplot2::ggplot(df, ggplot2::aes(x = dim, y = variance, color = type)) +
+    ggplot2::geom_line() +
+    ggplot2::geom_point(size = 2) +
+    ggplot2::annotate("text", x = Inf, y = Inf,
+                      label = sprintf("alpha[in] == %.2f", alpha_in),
+                      hjust = 1.1, vjust = 1.5, parse = TRUE, size = 3.5) +
+    ggplot2::scale_x_continuous(breaks = seq_len(m)) +
+    ggplot2::labs(x = "input PC dimension", y = "normalized variance",
+                  color = NULL) +
+    ggplot2::theme_classic() +
+    ggplot2::theme(legend.position = "top")
+}
+
+
+# =========================================================================
+# rrr_plot_alignment_output: OUTPUT ALIGNMENT 3-PANEL FIGURE
+# =========================================================================
+# [Role]:
+#   Three-panel summary of output alignment (Wu & Pillow 2025, Fig. 6):
+#     Panel 1 (variance): normalized per-PC variance — output population vs
+#              communicated signal.
+#     Panel 2 (cumulative): normalized cumulative variance by PC.
+#     Panel 3 (scatter): single point at (comm_frac, alpha_out) with
+#              reference lines at x=0.5 and y=0.
+#
+# [Inputs]:
+#   X : matrix [T x m], centered input activity
+#   Y : matrix [T x n], centered output activity
+#   W : matrix [m x n], communication weight matrix
+#
+# [Outputs]:
+#   patchwork object (3 panels combined)
+#
+# [Notes]:
+#   - Calls rrr_alignment_output internally; does not re-expose its values.
+#   - Requires ggplot2 and patchwork.
+# =========================================================================
+rrr_plot_alignment_output <- function(X, Y, W) {
+  res     <- rrr_alignment_output(X, Y, W)
+  alpha   <- res$alpha_out
+  cf      <- res$comm_frac
+
+  sv_Y     <- svd(cov(Y))
+  spopvec  <- sv_Y$d
+  upop     <- sv_Y$u
+  scomvec  <- diag(t(upop) %*% cov(X %*% W) %*% upop)
+  n        <- length(spopvec)
+
+  spop_nrm <- spopvec / sum(spopvec)
+  scom_nrm <- scomvec / sum(scomvec)
+
+  df1 <- data.frame(
+    dim      = rep(seq_len(n), 2),
+    variance = c(spop_nrm, scom_nrm),
+    type     = rep(c("output population", "communicated"), each = n)
+  )
+  p1 <- ggplot2::ggplot(df1, ggplot2::aes(x = dim, y = variance,
+                                           color = type)) +
+    ggplot2::geom_line() + ggplot2::geom_point(size = 1.5) +
+    ggplot2::scale_x_continuous(breaks = seq_len(n)) +
+    ggplot2::labs(x = "output PC", y = "normalized variance", color = NULL) +
+    ggplot2::theme_classic() +
+    ggplot2::theme(legend.position = "top")
+
+  df2 <- data.frame(
+    dim    = rep(seq_len(n), 2),
+    cumvar = c(cumsum(spop_nrm), cumsum(scom_nrm)),
+    type   = rep(c("output population", "communicated"), each = n)
+  )
+  p2 <- ggplot2::ggplot(df2, ggplot2::aes(x = dim, y = cumvar,
+                                           color = type)) +
+    ggplot2::geom_line() + ggplot2::geom_point(size = 1.5) +
+    ggplot2::scale_x_continuous(breaks = seq_len(n)) +
+    ggplot2::scale_y_continuous(limits = c(0, 1), breaks = c(0, 0.5, 1)) +
+    ggplot2::labs(x = "output PC", y = "cumulative variance", color = NULL) +
+    ggplot2::theme_classic() +
+    ggplot2::theme(legend.position = "none")
+
+  df3 <- data.frame(comm_frac = cf, alpha_out = alpha)
+  p3 <- ggplot2::ggplot(df3, ggplot2::aes(x = comm_frac, y = alpha_out)) +
+    ggplot2::geom_hline(yintercept = 0, linetype = "dashed",
+                        color = "grey60") +
+    ggplot2::geom_vline(xintercept = 0.5, linetype = "dashed",
+                        color = "grey60") +
+    ggplot2::geom_point(size = 3) +
+    ggplot2::scale_x_continuous(limits = c(0, 1), breaks = c(0, 0.5, 1)) +
+    ggplot2::scale_y_continuous(limits = c(-1, 1), breaks = c(-1, 0, 1)) +
+    ggplot2::labs(x = "communication fraction",
+                  y = "output alignment index") +
+    ggplot2::coord_fixed() +
+    ggplot2::theme_classic()
+
+  patchwork::wrap_plots(p1, p2, p3, nrow = 1)
 }

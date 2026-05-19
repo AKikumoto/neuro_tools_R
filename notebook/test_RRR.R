@@ -1,6 +1,6 @@
 # notebook/test_RRR.R
 # ==============================================================================
-# Test suite for RRR_lib.R  — 16 R-only tests, no Python dependency
+# Test suite for RRR_lib.R  — 19 R-only tests, no Python dependency
 #
 #  1.  rrr_simulate: shapes correct
 #  2.  rrr_simulate: Y ≈ X B up to noise (SNR > 5)
@@ -18,9 +18,14 @@
 #  14. rrr_alignment_input: ≈ 0 when W aligned with bottom input PC
 #  15. rrr_alignment_output: alpha_out and comm_frac in [0, 1]
 #  16. rrr_alignment_output: ≈ 1 when communication drives top output PC
+#  17. rrr_plot_cv_r2: returns a ggplot
+#  18. rrr_plot_alignment_input: returns a ggplot
+#  19. rrr_plot_alignment_output: returns a patchwork
 # ==============================================================================
 
 library(testthat)
+library(ggplot2)
+library(patchwork)
 
 if (!exists("rrr_fit")) source("RRR_lib.R")
 
@@ -178,5 +183,27 @@ test_that("rrr_alignment_output == 1 when communication drives top output PC", {
   W_top   <- v_X %*% t(u_Y_top)                       # [5 x 4], rank 1
   res     <- rrr_alignment_output(X, Y, W_top)
   expect_gt(res$alpha_out, 1 - 1e-10)
+})
+
+
+# ==============================================================================
+# Tests 17-19: visualization
+# ==============================================================================
+
+test_that("rrr_plot_cv_r2 returns a ggplot", {
+  set.seed(7)
+  cv <- rrr_cv_rank(X, Y, max_rank = 3, n_folds = 5)
+  p  <- rrr_plot_cv_r2(cv)
+  expect_s3_class(p, "gg")
+})
+
+test_that("rrr_plot_alignment_input returns a ggplot", {
+  p <- rrr_plot_alignment_input(X, model$W)
+  expect_s3_class(p, "gg")
+})
+
+test_that("rrr_plot_alignment_output returns a patchwork", {
+  p <- rrr_plot_alignment_output(X, Y, model$W)
+  expect_s3_class(p, "patchwork")
 })
 

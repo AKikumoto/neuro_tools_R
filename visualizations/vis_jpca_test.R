@@ -1,7 +1,7 @@
 # visualizations/vis_jpca_test.R
 # ------------------------------------------------------------------------------
 # Visualize jpca_fit() test results using ggplot2 + patchwork
-# Output: visualizations/jpca_test_summary.md  +  visualizations/fig_*.png
+# Output: visualizations/jpca_test_summary.md  +  visualizations/jpca_fig*.png
 # Run from project root: source("visualizations/vis_jpca_test.R")
 # ------------------------------------------------------------------------------
 
@@ -96,7 +96,7 @@ fig1 <- ggplot(df_traj, aes(x = jPC1, y = jPC2, colour = condition)) +
         strip.text = element_text(size = 10),
         aspect.ratio = 1)
 
-ggsave(file.path(out_dir, "fig1_trajectories.png"),
+ggsave(file.path(out_dir, "jpca_fig1_trajectories.png"),
        fig1, width = 9, height = 4.5, dpi = 120)
 
 # ==============================================================================
@@ -138,7 +138,7 @@ fig2 <- ggplot(df_angles, aes(x = angle)) +
   theme_bw(base_size = 11) +
   theme(legend.position = "none")
 
-ggsave(file.path(out_dir, "fig2_angle_distributions.png"),
+ggsave(file.path(out_dir, "jpca_fig2_angle_distributions.png"),
        fig2, width = 9, height = 4, dpi = 120)
 
 # ==============================================================================
@@ -168,7 +168,7 @@ fig3 <- ggplot(df_r2, aes(x = metric, y = value, fill = data_type)) +
   theme_bw(base_size = 11) +
   theme(legend.position = "bottom")
 
-ggsave(file.path(out_dir, "fig3_R2_comparison.png"),
+ggsave(file.path(out_dir, "jpca_fig3_R2_comparison.png"),
        fig3, width = 6, height = 4.5, dpi = 120)
 
 # ==============================================================================
@@ -187,19 +187,19 @@ md <- c(
   "---",
   "",
   "## Figure 1 \u2014 jPCA plane trajectories",
-  "![trajectories](fig1_trajectories.png)",
+  "![trajectories](jpca_fig1_trajectories.png)",
   "Filled circles = t=0 (start). Pure rotation shows organized spirals; random shows noisy wandering.",
   "",
   "---",
   "",
   "## Figure 2 \u2014 Angle distributions",
-  "![angles](fig2_angle_distributions.png)",
+  "![angles](jpca_fig2_angle_distributions.png)",
   "\u03b8 = angle between x(t) and \u1e8b(t) in the jPC plane. \u03b8 = \u03c0/2 \u2192 pure rotation; \u03b8 \u2248 0 \u2192 expansion.",
   "",
   "---",
   "",
   "## Figure 3 \u2014 R\u00b2 fit quality",
-  "![R2](fig3_R2_comparison.png)",
+  "![R2](jpca_fig3_R2_comparison.png)",
   "R\u00b2_unrestr = unconstrained M; R\u00b2_skew = skew-symmetric constraint.",
   "",
   "---",
@@ -237,7 +237,7 @@ cat(paste(md, collapse = "\n"),
     file = file.path(out_dir, "jpca_test_summary.md"))
 
 cat("Done. Output written to visualizations/\n")
-cat("  fig1_trajectories.png\n")
-cat("  fig2_angle_distributions.png\n")
-cat("  fig3_R2_comparison.png\n")
+cat("  jpca_fig1_trajectories.png\n")
+cat("  jpca_fig2_angle_distributions.png\n")
+cat("  jpca_fig3_R2_comparison.png\n")
 cat("  jpca_test_summary.md\n")
