@@ -1,8 +1,7 @@
 # notebook/test_RRR.R
 # ==============================================================================
-# Test suite for RRR_lib.R
+# Test suite for RRR_lib.R  — 16 R-only tests, no Python dependency
 #
-# Unit tests:
 #  1.  rrr_simulate: shapes correct
 #  2.  rrr_simulate: Y ≈ X B up to noise (SNR > 5)
 #  3.  rrr_fit: rank(W) == r
@@ -19,12 +18,6 @@
 #  14. rrr_alignment_input: ≈ 0 when W aligned with bottom input PC
 #  15. rrr_alignment_output: alpha_out and comm_frac in [0, 1]
 #  16. rrr_alignment_output: ≈ 1 when communication drives top output PC
-#
-# Python comparison (requires reticulate + numpy + scipy):
-#  17. rrr_fit W matches svd_RRR w0 (lambda=0)
-#  18. rrr_fit W matches svd_RRR w0 (lambda=100)
-#  19. rrr_alignment_input matches Python alignment_input
-#  20. rrr_alignment_output matches Python alignment_output
 # ==============================================================================
 
 library(testthat)
@@ -187,60 +180,3 @@ test_that("rrr_alignment_output == 1 when communication drives top output PC", {
   expect_gt(res$alpha_out, 1 - 1e-10)
 })
 
-
-# ==============================================================================
-# Python comparison via reticulate
-# Requires: reticulate, numpy, scipy
-# ==============================================================================
-
-if (requireNamespace("reticulate", quietly = TRUE)) {
-  py_ok <- tryCatch({
-    reticulate::import("numpy")
-    reticulate::import("scipy")
-    TRUE
-  }, error = function(e) FALSE)
-
-  if (py_ok) {
-    py_path    <- file.path("original", "RRR", "python")
-    fitting_py  <- reticulate::import_from_path("fitting",   path = py_path)
-    align_py    <- reticulate::import_from_path("alignment", path = py_path)
-
-    X_py <- reticulate::r_to_py(X)
-    Y_py <- reticulate::r_to_py(Y)
-    W_py_mat <- reticulate::r_to_py(model$W)
-
-    test_that("rrr_fit W matches svd_RRR w0 (lambda=0)", {
-      py_out <- fitting_py$svd_RRR(X_py, Y_py, 2L, lambda_ = 0.0)
-      W_py   <- reticulate::py_to_r(py_out[[1]])
-      expect_lt(max(abs(model$W - W_py)), 1e-8)
-    })
-
-    test_that("rrr_fit W matches svd_RRR w0 (lambda=100)", {
-      model_r <- rrr_fit(X, Y, rank = 2, lambda = 100)
-      py_out  <- fitting_py$svd_RRR(X_py, Y_py, 2L, lambda_ = 100.0)
-      W_py    <- reticulate::py_to_r(py_out[[1]])
-      expect_lt(max(abs(model_r$W - W_py)), 1e-8)
-    })
-
-    test_that("rrr_alignment_input matches Python alignment_input", {
-      py_res   <- align_py$alignment_input(X_py, W_py_mat)
-      alpha_py <- reticulate::py_to_r(py_res[[1]])
-      alpha_r  <- rrr_alignment_input(X, model$W)
-      expect_lt(abs(alpha_r - alpha_py), 1e-8)
-    })
-
-    test_that("rrr_alignment_output matches Python alignment_output", {
-      py_res    <- align_py$alignment_output(X_py, Y_py, W_py_mat)
-      alpha_py  <- reticulate::py_to_r(py_res[[1]])
-      cf_py     <- reticulate::py_to_r(py_res[[2]])
-      res_r     <- rrr_alignment_output(X, Y, model$W)
-      expect_lt(abs(res_r$alpha_out - alpha_py), 1e-8)
-      expect_lt(abs(res_r$comm_frac - cf_py),    1e-8)
-    })
-
-  } else {
-    message("numpy/scipy not available; skipping Python comparison tests (17-20)")
-  }
-} else {
-  message("reticulate not available; skipping Python comparison tests (17-20)")
-}
