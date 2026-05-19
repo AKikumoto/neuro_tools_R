@@ -1,26 +1,28 @@
-# demixed_PCA library
-# ------------------------------------------------------------------------------
-# R re-implementation of Kobak et al. (2016) demixed PCA
+# demixedPCA_lib.R
+# ==============================================================================
+# R implementation of Kobak et al. (2016) demixed PCA
 # Python original: https://github.com/machenslab/dPCA
 #
-# Core functions:
-#   dpca_get_marginalizations  -- enumerate all parameter subsets
-#   dpca_marginalize           -- decompose X into orthogonal marginals
-#   dpca_fit                   -- solve for encoder/decoder pairs (P, D)
-#   dpca_transform             -- project data to latent components
-#   dpca_inverse_transform     -- reconstruct data from latent components
-#   dpca_reconstruct           -- fit_transform + inverse in one call
-#   dpca_significance          -- cross-validated significance masks
-#   dpca_plot                  -- full-figure plot (MATLAB dpca_plot equivalent)
+# Functions:
+#   dpca_get_marginalizations -- enumerate all 2^K - 1 parameter subsets
+#   dpca_marginalize          -- ANOVA decomposition of X into orthogonal marginals
+#   dpca_fit                  -- solve for encoder P and decoder D per marginalization
+#   dpca_transform            -- project data: Z_phi = D_phi^T X_flat
+#   dpca_inverse_transform    -- reconstruct: X_recon = P_phi Z_phi
+#   dpca_reconstruct          -- fit_transform + inverse in one call
+#   dpca_significance         -- shuffle-test significance per component and timepoint
+#   dpca_plot                 -- full-figure plot (MATLAB dpca_plot equivalent)
 #
 # Data convention:
-#   X  : array [N, d1, d2, ...] where N = neurons/channels
-#        and d1, d2, ... are parameter axes (e.g. S stimuli, T time-points)
+#   X      : array [N, d1, d2, ...], N = neurons/channels, d1..dK = parameter dims
 #   labels : character string, one char per parameter axis (e.g. "st")
+#   Both trial-averaged; centering (subtract per-neuron grand mean) is done
+#   inside dpca_fit and dpca_transform.
 #
 # Reference:
-#   Kobak D, Brendel W, et al. (2016). Demixed principal component analysis
-#   of neural population data. eLife 5:e10989.
+#   Kobak D, Brendel W, Constantinidis C, Feierstein CE, Kepecs A, Mainen ZF,
+#   Qi XL, Romo R, Uchida N, Machens CK (2016). Demixed principal component
+#   analysis of neural population data. eLife 5:e10989.
 # ==============================================================================
 
 
@@ -78,18 +80,39 @@ g = function(...) {
 
 
 # ==============================================================================
-# Functions 
+# Functions
 # ==============================================================================
+
+# =========================================================================
+# prep_cond_avg: CONDITION-AVERAGED DATA PER BALANCE FOLD
+# =========================================================================
+# [Role]:
+#   Compute per-balance-fold condition averages from trial-by-trial data,
+#   returning a list of [N x T] matrices ready for dpca_fit. Used in
+#   dpca_significance to create train/test splits that respect balance.
+#
+# [Inputs]:
+#   d      : array [n_trial x n_time x N], trial-by-trial neural data.
+#            n_trial = trials, n_time = time-points, N = neurons.
+#   blIDX  : integer vector [n_trial], balance fold ID per trial
+#            (e.g. ds_bl[["balanceID"]]).
+#   grpIDX : character/integer vector [n_trial], condition label per trial
+#            (e.g. ds_bl[[modelV]]).
+#
+# [Outputs]:
+#   XnL : list of matrices [N x T], one element per balance fold.
+#         Each matrix is the condition-averaged activity for that fold.
+#
+# [Algorithm]:
+#   1. Average d over trials within each (balanceID, condition) cell (narray::map).
+#   2. Sort rows, split by balanceID (narray::split).
+#   3. Transpose each slice to [N x T] format.
+#
+# [Notes]:
+#   - Requires the narray package.
+#   - dimAdj is a project-local helper assumed to be in scope.
+# =========================================================================
 prep_cond_avg <- function(d, blIDX, grpIDX) {
-  # [XnL] = prep_cond_avg(d, blIDX, grpIDX)
-  # Condition-averaged data per balance fold → list of [N x T] matrices
-  #
-  # XnL : list of matrices [N x T], one per balance fold
-  #
-  # d      : array [n_trial x n_time x N]
-  # blIDX  : balance fold ID per trial (ds_bl[["balanceID"]])
-  # grpIDX : condition label per trial (ds_bl[[modelV]])
-  # --------------------------------------------------------
   Xn  <- narray::map(d, along=1, mean,
                      subsets=paste0(blIDX,"_",grpIDX))
   Xn  <- Xn[order(rownames(Xn)),,]
@@ -104,22 +127,38 @@ prep_cond_avg <- function(d, blIDX, grpIDX) {
 # dPCA core functions
 # ==============================================================================
 
-# ------------------------------------------------------------------------------
-# dpca_get_marginalizations
-# ------------------------------------------------------------------------------
-# Returns all non-empty subsets of the parameter axes as a named list.
-# Each element is a sorted integer vector of 0-based parameter axis indices.
+# =========================================================================
+# dpca_get_marginalizations: ENUMERATE ALL 2^K - 1 PARAMETER SUBSETS
+# =========================================================================
+# [Role]:
+#   Build the complete powerset of K parameter axes (excluding the empty set),
+#   returning a named list of 0-based integer index vectors. This set of
+#   subsets defines the marginalizations that dPCA decomposes variance into:
+#   each marginalization corresponds to one ANOVA-style effect (main effects
+#   and all interactions).
 #
-# Parameters:
-#   labels : character string, e.g. "st"
+# [Inputs]:
+#   labels : character string, one character per parameter axis (e.g. "st").
+#            Length K determines the 2^K - 1 output elements.
 #
-# Returns:
-#   Named list, e.g. list(s=0L, t=1L, st=c(0L,1L))
-#   The indices refer to the PARAMETER axes (i.e. dim 2,3,... of X).
+# [Outputs]:
+#   Named list of integer vectors, e.g. for labels="st":
+#     list(s = 0L, t = 1L, st = c(0L, 1L))
+#   Indices are 0-based parameter axis indices (i.e. dim 2, 3, ... of X,
+#   where dim 1 is the neuron axis N).
 #
-# Example (labels="st"):
-#   list(s=0, t=1, st=c(0,1))
-# ------------------------------------------------------------------------------
+# [Algorithm]:
+#   For r = 1..K, enumerate all length-r combinations of 1..K via combn.
+#   Key = paste of label characters; value = sorted 0-based axis indices.
+#
+# [Notes]:
+#   - 0-based indices match Python/MATLAB conventions used in ARCHITECTURE.
+#   - For K=2 ("st"): 3 elements. For K=3 ("stc"): 7 elements.
+#   - Order within the list is lexicographic by subset size then content.
+#
+# [Reference]:
+#   Kobak et al. (2016) eLife 5:e10989. Appendix.
+# =========================================================================
 dpca_get_marginalizations <- function(labels) {
   K <- nchar(labels)
   chars <- strsplit(labels, "")[[1]]
@@ -137,32 +176,49 @@ dpca_get_marginalizations <- function(labels) {
 }
 
 
-# ------------------------------------------------------------------------------
-# dpca_marginalize
-# ------------------------------------------------------------------------------
-# Decomposes the centered data array X into orthogonal marginalizations.
+# =========================================================================
+# dpca_marginalize: ANOVA DECOMPOSITION INTO ORTHOGONAL MARGINALS
+# =========================================================================
+# [Role]:
+#   Decompose the centered data array X into orthogonal ANOVA-style
+#   marginalizations. Each marginalization captures the variance attributable
+#   to one parameter combination (main effects and interactions).
 #
-# ANOVA-style decomposition (e.g., labels="st", X=[N,S,T]):
-#   X_s[n,s,t] = mean_t(Xc[n,s,:])           stimulus effect (constant over t)
-#   X_t[n,s,t] = mean_s(Xc[n,:,t])           time effect    (constant over s)
-#   X_st        = Xc - X_s - X_t              interaction
-#   Sum: X_s + X_t + X_st = Xc  (orthogonal partition of centered variance)
+#   Example (labels="st", X=[N,S,T]):
+#     X_s[n,s,t] = mean_t(Xc[n,s,:])     stimulus effect (constant over t)
+#     X_t[n,s,t] = mean_s(Xc[n,:,t])     time effect    (constant over s)
+#     X_st        = Xc - X_s - X_t        interaction
+#     Sum: X_s + X_t + X_st = Xc   (exact orthogonal partition)
 #
-# Algorithm follows Kobak et al. (2016) Appendix:
-#   1. pre_mean[[key]] = mean of Xc over the axes IN key  
-#      (shape with 1 at those axes, keeps all others)
-#   2. base = pre_mean[[complement(phi)]] = mean over axes NOT in phi
-#   3. Subtract all strict sub-marginals (inclusion-exclusion) to ensure
-#      orthogonality
-#   4. Expand singletons to full dim; flatten to [N, prod(dx)]
+# [Inputs]:
+#   X      : array [N, d1, d2, ...], trial-averaged neural data.
+#            N = neurons, d1..dK = parameter dimensions.
+#   labels : character string, one char per parameter axis.
 #
-# Parameters:
-#   X      : array [N, d1, d2, ...]  (neurons x parameters)
-#   labels : character string, one char per parameter axis
+# [Outputs]:
+#   Named list of matrices [N, prod(d1, ..., dK)], one per marginalization.
+#   Columns are the flattened parameter grid in row-major order.
 #
-# Returns:
-#   Named list of matrices [N, prod(d1,...)] — one per marginalization.
-# ------------------------------------------------------------------------------
+# [Algorithm]:
+#   Follows Kobak et al. (2016) Appendix, inclusion-exclusion:
+#   1. Center X: subtract per-neuron grand mean -> Xc.
+#   2. For each key phi (sorted parameter subset):
+#      pre_mean[[phi]] = mean of Xc over the axes listed in phi
+#      (singleton shape at those axes, full shape elsewhere).
+#   3. base = pre_mean[[complement(phi)]] = mean over axes NOT in phi.
+#   4. Subtract all strict sub-marginals of phi (inclusion-exclusion)
+#      to remove overlap and ensure orthogonality.
+#   5. Expand singletons to full dX; flatten to [N, prod(dx)].
+#
+# [Notes]:
+#   - expand_to is an internal broadcast helper (R lacks implicit broadcasting).
+#   - pre_mean is built incrementally: each multi-char key's pre_mean is the
+#     parent key's pre_mean averaged over the last new axis (chain reduction).
+#   - The orthogonality guarantee: sum of all marginals = Xc exactly.
+#
+# [Reference]:
+#   Kobak et al. (2016) eLife 5:e10989. Appendix.
+# =========================================================================
 dpca_marginalize <- function(X, labels) {
   N     <- dim(X)[1]
   dx    <- dim(X)[-1]
@@ -243,40 +299,57 @@ dpca_marginalize <- function(X, labels) {
 }
 
 
-# ------------------------------------------------------------------------------
-# dpca_fit
-# ------------------------------------------------------------------------------
-# Fit a dPCA model:  find encoder P and decoder D for each marginalization.
+# =========================================================================
+# dpca_fit: SOLVE FOR ENCODER P AND DECODER D PER MARGINALIZATION
+# =========================================================================
+# [Role]:
+#   Fit a dPCA model by finding, for each marginalization phi, a k-dimensional
+#   encoder P_phi and decoder D_phi such that:
+#     - D_phi captures variance specific to phi (demixed from other effects).
+#     - P_phi reconstructs back to the full neural space.
+#   Unlike PCA, P != D: the decoder is specialized to one parameter combination
+#   while the encoder spans the full population. This asymmetry is what makes
+#   the decomposition "demixed."
 #
-# The algorithm (Kobak et al. 2016, Appendix):
-#   For each marginalization phi:
-#     C_phi = X_phi_flat  %*%  pinv(X_flat)          [N × N]
-#     Fact  = C_phi %*% X_flat                        [N × (prod dx)]
-#     SVD:   Fact = U S V^T   (truncated to n_components)
-#     P_phi = U                                       [N × k]  (encoder)
-#     D_phi = (U^T %*% C_phi)^T  = C_phi^T %*% U    [N × k]  (decoder)
+#   Kobak et al. (2016): "dPCA finds components that each mostly capture the
+#   variance of just one marginalization."
 #
-#   Transform:  Z_phi = t(D_phi) %*% X_flat           [k × (prod dx)]
-#   Reconstruct: P_phi %*% Z_phi                      [N × (prod dx)]
+# [Inputs]:
+#   X           : array [N, d1, d2, ...], trial-averaged neural data.
+#   labels      : character string, one char per parameter axis.
+#   n_components: integer or named list per marginalization (default 10).
+#                 Number of components to extract per marginalization.
+#   regularizer : numeric >= 0, ridge penalty = regularizer * var(X).
+#                 Set 0 for no regularization.
 #
-# Note: P and D are distinct (unlike standard PCA). This is what "demixed" means:
-#   D decodes a SINGLE parameter combination; P encodes back to full space.
+# [Outputs]:
+#   dpca_model list with:
+#   $P     : named list of matrices [N x k], encoders (one per marginalization)
+#   $D     : named list of matrices [N x k], decoders (one per marginalization)
+#   $labels: character string
+#   $dx    : integer vector, parameter dimensions
+#   $N     : integer, number of neurons
+#   $margs : marginalization list from dpca_get_marginalizations
+#   $n_components, $regularizer : metadata
 #
-# Parameters:
-#   X           : array [N, d1, d2, ...]
-#   labels      : character string
-#   n_components: integer (same for all) or named list per marginalization
-#   regularizer : numeric >= 0;  ridge penalty = regularizer * var(X)
-#                 (set 0 for no regularization)
+# [Algorithm]:
+#   For each marginalization phi (Kobak et al. 2016, Appendix):
+#     C_phi = X_phi_flat %*% pinv(X_flat)           [N x N]
+#     Fact  = C_phi %*% X_flat                       [N x prod(dx)]
+#     SVD of Fact (truncated to k components):
+#       P_phi = U                                    [N x k]  (encoder)
+#       D_phi = C_phi^T %*% U                        [N x k]  (decoder)
+#   With regularization: append lambda*I to X and zeros to each X_phi
+#   (standard Tikhonov trick: argmin ||X_phi - D P^T X||^2 + lam||P||^2).
 #
-# Returns:  list with elements
-#   P, D   : named lists of matrices [N × k], one per marginalization
-#   labels : the labels string
-#   dx     : parameter dimensions
-#   N      : number of neurons
-#   margs  : marginalization list from dpca_get_marginalizations
-#   explained_variance_ratio : named list of numeric vectors (set after transform)
-# ------------------------------------------------------------------------------
+# [Notes]:
+#   - P is the left singular vectors of Fact (optimal reconstruction direction).
+#   - D = C_phi^T P is the projection direction specialized to phi.
+#   - In standard PCA, C_phi = I and D = P.
+#
+# [Reference]:
+#   Kobak et al. (2016) eLife 5:e10989. Appendix.
+# =========================================================================
 dpca_fit <- function(X, labels, n_components = 10, regularizer = 0) {
   N  <- dim(X)[1]
   dx <- dim(X)[-1]
@@ -336,23 +409,39 @@ dpca_fit <- function(X, labels, n_components = 10, regularizer = 0) {
 }
 
 
-# ------------------------------------------------------------------------------
-# dpca_transform
-# ------------------------------------------------------------------------------
-# Project data X onto the dPCA components found during fit.
+# =========================================================================
+# dpca_transform: PROJECT DATA ONTO dPCA COMPONENTS
+# =========================================================================
+# [Role]:
+#   Project the neural data array X onto the dPCA decoder directions found
+#   during dpca_fit, producing low-dimensional latent trajectories for each
+#   marginalization. Also computes explained variance per component.
 #
-# Z_phi = t(D_phi) %*% X_flat     [k × (d1*d2*...)]
-# then reshaped to [k, d1, d2, ...]
+# [Inputs]:
+#   X     : array [N, d1, d2, ...], same shape as used in dpca_fit.
+#   model : dpca_model list output of dpca_fit.
 #
-# Parameters:
-#   X     : array [N, d1, d2, ...]   (same shape used in dpca_fit)
-#   model : result of dpca_fit
-#
-# Returns:
+# [Outputs]:
 #   Named list of arrays [k, d1, d2, ...], one per marginalization.
-#   Also stores explained_variance_ratio in model environment (invisible side
-#   effect — attach to the returned list as attribute "var_ratio").
-# ------------------------------------------------------------------------------
+#   The list carries an attribute "explained_variance_ratio": a named list
+#   of numeric vectors, one per marginalization, giving the fraction of
+#   total variance explained by each component.
+#
+# [Algorithm]:
+#   1. Flatten X to [N, prod(dx)]; center per neuron.
+#   2. For each marginalization phi:
+#        Z_flat = D_phi^T X_flat          [k x prod(dx)]
+#        Z      = array(Z_flat, [k, dx])  [k, d1, d2, ...]
+#        EV[i]  = sum(Z_flat[i,]^2) / total_var
+#
+# [Notes]:
+#   - Uses D_phi (decoder), not P_phi (encoder). This is the projection
+#     that is specialized to marginalization phi.
+#   - Explained variance is relative to total (all-marginalization) variance.
+#
+# [Reference]:
+#   Kobak et al. (2016) eLife 5:e10989. Appendix.
+# =========================================================================
 dpca_transform <- function(X, model) {
   N    <- model$N
   dx   <- model$dx
@@ -381,20 +470,37 @@ dpca_transform <- function(X, model) {
 }
 
 
-# ------------------------------------------------------------------------------
-# dpca_inverse_transform
-# ------------------------------------------------------------------------------
-# Reconstruct the full [N, d1, d2, ...] data from latent components Z_phi.
+# =========================================================================
+# dpca_inverse_transform: RECONSTRUCT FROM LATENT COMPONENTS
+# =========================================================================
+# [Role]:
+#   Reconstruct the full neural array [N, d1, ...] from the latent components
+#   Z_phi of one marginalization, using the encoder P_phi. Combines with
+#   dpca_transform to give the dPCA-filtered version of the data for a single
+#   parameter effect.
 #
-# X_recon = P_phi %*% Z_phi_flat
+# [Inputs]:
+#   Z               : array [k, d1, d2, ...], latent components for one
+#                     marginalization (one element of dpca_transform output).
+#   model           : dpca_model list output of dpca_fit.
+#   marginalization : character key selecting which marginalization (e.g. "s").
 #
-# Parameters:
-#   Z             : array [k, d1, d2, ...] (one element from dpca_transform output)
-#   model         : result of dpca_fit
-#   marginalization : character key, e.g. "s"
+# [Outputs]:
+#   array [N, d1, d2, ...], reconstructed neural data for marginalization phi.
 #
-# Returns:  array [N, d1, d2, ...]
-# ------------------------------------------------------------------------------
+# [Algorithm]:
+#   X_recon = P_phi %*% Z_flat    where Z_flat = matrix(Z, nrow=k)   [N x prod(dx)]
+#   Reshape to [N, d1, d2, ...].
+#
+# [Notes]:
+#   - Uses P_phi (encoder), not D_phi (decoder). The reconstruction is in the
+#     full neural space.
+#   - dpca_reconstruct(X, model, phi) = dpca_inverse_transform(
+#       dpca_transform(X, model)[[phi]], model, phi).
+#
+# [Reference]:
+#   Kobak et al. (2016) eLife 5:e10989. Appendix.
+# =========================================================================
 dpca_inverse_transform <- function(Z, model, marginalization) {
   Pk    <- model$P[[marginalization]]                 # [N × k]
   dx    <- model$dx
@@ -406,46 +512,77 @@ dpca_inverse_transform <- function(Z, model, marginalization) {
 }
 
 
-# ------------------------------------------------------------------------------
-# dpca_reconstruct
-# ------------------------------------------------------------------------------
-# Convenience: transform then inverse_transform for one marginalization.
+# =========================================================================
+# dpca_reconstruct: CONVENIENCE TRANSFORM + INVERSE FOR ONE MARGINALIZATION
+# =========================================================================
+# [Role]:
+#   Shorthand for dpca_inverse_transform(dpca_transform(X, model)[[phi]],
+#   model, phi). Returns the dPCA-filtered reconstruction of X for a single
+#   parameter effect -- the component of population activity attributable
+#   to that effect alone.
 #
-# Returns: array [N, d1, d2, ...]
-# ------------------------------------------------------------------------------
+# [Inputs]:
+#   X               : array [N, d1, d2, ...], same shape as used in dpca_fit.
+#   model           : dpca_model list output of dpca_fit.
+#   marginalization : character key (e.g. "s", "t", "st").
+#
+# [Outputs]:
+#   array [N, d1, d2, ...], reconstructed neural data for the given marginalization.
+#
+# [Reference]:
+#   Kobak et al. (2016) eLife 5:e10989.
+# =========================================================================
 dpca_reconstruct <- function(X, model, marginalization) {
   Z <- dpca_transform(X, model)[[marginalization]]
   dpca_inverse_transform(Z, model, marginalization)
 }
 
 
-# ------------------------------------------------------------------------------
-# dpca_significance
-# ------------------------------------------------------------------------------
-# Cross-validated significance analysis.
+# =========================================================================
+# dpca_significance: SHUFFLE-TEST SIGNIFICANCE PER COMPONENT AND TIMEPOINT
+# =========================================================================
+# [Role]:
+#   Assess statistical significance of each dPCA component at each time point
+#   by comparing classification accuracy (nearest-mean classifier in latent
+#   space) on real data against a shuffled-label null distribution.
+#   Returns a logical mask [k x T] that is TRUE where the component is
+#   significant (true accuracy > maximum shuffle accuracy).
 #
-# For each marginalization phi (except the full-label one):
-#   1. Split trials into train/test sets (n_splits times)
-#   2. Fit dPCA on train, project test
-#   3. Classify test labels using nearest-mean classifier in latent space
-#   4. Compare classification accuracy against shuffled-label null distribution
-#   5. Time-points where true_score > max_shuffle_score are significant
-#
-# Parameters:
-#   X           : array [N, d1, ..., T]   trial-averaged
-#   trialX      : array [n_trials, N, d1, ..., T]  trial-by-trial
-#   model       : result of dpca_fit (or NULL to re-fit each time)
-#   labels      : character string (used if model is NULL)
-#   n_shuffles  : integer, number of label shuffles (p-value = 1/n_shuffles)
-#   n_splits    : integer, train-test splits per evaluation
+# [Inputs]:
+#   X            : array [N, d1, ..., T], trial-averaged neural data.
+#   trialX       : array [n_trials, N, d1, ..., T], trial-by-trial data.
+#   model        : dpca_model from dpca_fit, or NULL to re-fit inside.
+#   labels       : character string (used to fit if model is NULL).
+#   n_shuffles   : integer, number of label shuffles for null distribution
+#                  (p-value threshold ~ 1/n_shuffles; default 100).
+#   n_splits     : integer, train-test splits per evaluation (default 100).
 #   n_consecutive: require this many consecutive significant time-points
-#   axis        : integer, axis index (1-based within Z) over which significance
-#                 is evaluated; typically the time axis = last parameter axis
-#   n_components: passed to dpca_fit if model is NULL
+#                  before calling a run significant (default 1 = no filtering).
+#   axis         : integer, parameter axis (1-based) over which to evaluate
+#                  significance; typically the time axis (last parameter axis).
+#   n_components : passed to dpca_fit if model is NULL (default 10).
 #
-# Returns:
-#   Named list of logical matrices [k × T], TRUE where significant.
-# ------------------------------------------------------------------------------
+# [Outputs]:
+#   Named list of logical matrices [k x T], one per tested marginalization.
+#   TRUE at position [comp, t] means component comp is significant at time t.
+#
+# [Algorithm]:
+#   1. For n_splits: randomly hold out one trial, fit dPCA on the rest,
+#      project held-out trial, classify using nearest-mean in latent space.
+#      Accumulate mean classification accuracy per component and time point.
+#   2. Repeat with class labels shuffled (n_shuffles times) to build the null.
+#   3. Significance: true accuracy > max(shuffled accuracies) at each [comp, t].
+#   4. Apply n_consecutive filter: isolated significant time-points are removed.
+#
+# [Notes]:
+#   - Excludes the time-only marginalization (cannot classify over the axis
+#     used to define classes).
+#   - "Nearest-mean" classifier: for each condition, find the closest class
+#     mean in 1D latent space; accuracy = fraction correct.
+#
+# [Reference]:
+#   Kobak et al. (2016) eLife 5:e10989. Supplementary Methods.
+# =========================================================================
 dpca_significance <- function(X, trialX,
                                model       = NULL,
                                labels      = NULL,
@@ -607,41 +744,52 @@ dpca_significance <- function(X, trialX,
 }
 
 
-# ------------------------------------------------------------------------------
-# dpca_plot
-# ------------------------------------------------------------------------------
-# Full-figure dPCA plot, equivalent to the MATLAB dpca_plot() from Kobak 2016.
+# =========================================================================
+# dpca_plot: FULL-FIGURE dPCA PLOT (MATLAB dpca_plot EQUIVALENT)
+# =========================================================================
+# [Role]:
+#   Produce a publication-ready summary figure of a fitted dPCA model,
+#   equivalent to the MATLAB dpca_plot() from Kobak et al. (2016).
+#   Assembles component time-series panels in a marginalization x component
+#   grid, with optional explained-variance panels in a left column.
 #
-# Layout (assembled with patchwork when available):
-#   Left column  (optional, requires explained variance):
-#     - Top    : cumulative explained variance curve
-#     - Middle : per-component stacked bar (colour = marginalization)
-#     - Bottom : pie chart of total EV by marginalization
-#   Main grid:
-#     - rows    = marginalizations (in marg_order)
-#     - columns = top n_comp_show components per marginalization
-#     - lines   = stimulus conditions
-#     - shading = significant time windows (if signif provided)
-#     - dashed vertical lines = time events (if time_events provided)
+# [Inputs]:
+#   Z            : output of dpca_transform (named list of arrays [k x S x T]).
+#   model        : dpca_model list output of dpca_fit.
+#   time         : numeric vector length T (default 1:T).
+#   n_comp_show  : integer, components per marginalization to show (default 3).
+#   stim_labels  : character [S], legend labels (default "s1","s2",...).
+#   marg_order   : character vector, display order of marginalizations
+#                  (default = names(Z)).
+#   marg_colours : named character [M], hex/R colour per marginalization.
+#   marg_names   : named character [M], display name per marginalization.
+#   time_events  : numeric, x positions for vertical dashed event markers.
+#   signif       : named list of logical matrices [k x T] from dpca_significance;
+#                  significant time windows are shaded in the marginalization colour.
+#   show_ev      : logical, show left-column EV panels (default TRUE).
+#   palette      : RColorBrewer palette name for stimulus colours (default "Set1").
 #
-# Parameters:
-#   Z            : output of dpca_transform  [named list of arrays, each k×S×T]
-#   model        : output of dpca_fit
-#   time         : numeric vector length T  (default 1:T)
-#   n_comp_show  : components per marginalization to show (default 3)
-#   stim_labels  : character[S] — legend labels (default "s1","s2",...)
-#   marg_order   : character — column order of marginalizations (default names(Z))
-#   marg_colours : named character[M] — hex/R colours per marginalization
-#   marg_names   : named character[M] — display names per marginalization
-#   time_events  : numeric — x positions for vertical event markers
-#   signif       : named list of logical matrices [k × T], from dpca_significance()
-#   show_ev      : logical — show left-column EV panels (default TRUE)
-#   palette      : RColorBrewer name for stimulus colours (default "Set1")
+# [Outputs]:
+#   If patchwork is installed: a patchwork object (print to display).
+#   Otherwise: a named list of individual ggplot2 objects.
 #
-# Returns:
-#   If patchwork is installed: a patchwork object (print to display)
-#   Otherwise: a named list of ggplot objects
-# ------------------------------------------------------------------------------
+# [Layout]:
+#   Main grid  : M rows x n_comp_show columns of time-series panels.
+#                Each panel = one component of one marginalization.
+#                Lines = stimulus conditions; colour = marg_colour border.
+#   Left column (if show_ev = TRUE and explained variance available):
+#     - Cumulative EV curve (top)
+#     - Stacked bar: EV per component, colour = marginalization (middle)
+#     - Pie chart: total EV per marginalization (bottom)
+#
+# [Notes]:
+#   - Requires ggplot2; patchwork is optional (for automatic layout assembly).
+#   - Border colour of each panel indicates its marginalization.
+#   - Significance shading uses alpha=0.15 fill in the marginalization colour.
+#
+# [Reference]:
+#   Kobak et al. (2016) eLife 5:e10989. Fig. 2 and Supplementary Fig. 1.
+# =========================================================================
 dpca_plot <- function(Z, model,
                       time         = NULL,
                       n_comp_show  = 3L,
