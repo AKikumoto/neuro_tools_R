@@ -1,0 +1,24 @@
+CLAUDE.md
+resource/demixedPCA_jPCA_design.md
+visualizations/jpca_test_summary.md
+
+# Japanese-language notes (personal study)
+*_ja.md
+*_ja.html
+README_ja.md
+ref/jPCA_notes.md
+ref/dPCA_notes.md
+
+# Original upstream toolboxes (reference copies, not tracked)
+dPCA/
+original/
+
+# macOS
+.DS_Store
+**/.DS_Store
+ref/.DS_Store
+original/**/__pycache__/
+*.pdf
+
+# Manuscripts
+manuscripts/
